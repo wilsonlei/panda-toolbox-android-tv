@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import com.panda.toolbox.model.RunningAppItem
-import com.panda.toolbox.model.TerminateResult
 import java.util.Locale
 
 class RunningAppsRepository(private val context: Context) {
@@ -22,12 +21,7 @@ class RunningAppsRepository(private val context: Context) {
         return String.format(Locale.US, "RAM: %d MB free / %d MB", availMb, totalMb)
     }
 
-    fun getRunningApps(
-        includeSystemApps: Boolean,
-        terminatedTimestamps: Map<String, Long> = emptyMap()
-    ): List<RunningAppItem> {
-        val processMap = loadRunningProcesses()
-
+    fun getApps(activeOnly: Boolean): List<RunningAppItem> {
         val installedApps = try {
             packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
         } catch (_: Exception) {
@@ -41,17 +35,10 @@ class RunningAppsRepository(private val context: Context) {
 
             val isSystem = (appInfo.flags and
                 (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
-            if (!includeSystemApps && isSystem) continue
+            if (isSystem) continue
 
-            val procInfo = processMap[pkg]
-            val isNotStopped = (appInfo.flags and ApplicationInfo.FLAG_STOPPED) == 0
-
-            if (terminatedTimestamps.containsKey(pkg) && procInfo == null) {
-                continue
-            }
-
-            // Include if it has a live process reported by ActivityManager, or is not force-stopped.
-            if (procInfo == null && !isNotStopped) continue
+            val isStopped = (appInfo.flags and ApplicationInfo.FLAG_STOPPED) != 0
+            if (activeOnly && isStopped) continue
 
             val label = try {
                 packageManager.getApplicationLabel(appInfo).toString()
@@ -75,10 +62,7 @@ class RunningAppsRepository(private val context: Context) {
                 RunningAppItem(
                     packageName = pkg,
                     appName = label,
-                    isSystemApp = isSystem,
-                    pid = procInfo?.pid,
-                    importanceLabel = procInfo?.importanceLabel,
-                    memoryMb = procInfo?.memoryMb,
+                    isStopped = isStopped,
                     versionName = versionName,
                     icon = icon
                 )
@@ -86,79 +70,8 @@ class RunningAppsRepository(private val context: Context) {
         }
 
         return items.sortedWith(
-            compareByDescending<RunningAppItem> { it.pid != null }
+            compareBy<RunningAppItem> { it.isStopped }
                 .thenBy { it.appName.lowercase(Locale.ROOT) }
         )
-    }
-
-    fun terminateApps(packageNames: List<String>): TerminateResult {
-        var terminated = 0
-        val failed = ArrayList<String>()
-
-        for (pkg in packageNames) {
-            if (pkg == context.packageName) {
-                failed.add(pkg)
-                continue
-            }
-            try {
-                activityManager.killBackgroundProcesses(pkg)
-                terminated++
-            } catch (_: Exception) {
-                failed.add(pkg)
-            }
-        }
-
-        return TerminateResult(
-            terminatedCount = terminated,
-            failedPackages = failed
-        )
-    }
-
-    private data class ProcessDetails(
-        val pid: Int,
-        val importanceLabel: String,
-        val memoryMb: Int?
-    )
-
-    private fun loadRunningProcesses(): Map<String, ProcessDetails> {
-        val processes = try {
-            activityManager.runningAppProcesses
-        } catch (_: Exception) {
-            null
-        } ?: return emptyMap()
-
-        val result = HashMap<String, ProcessDetails>()
-        for (proc in processes) {
-            val pkgList = proc.pkgList ?: continue
-            val importanceLabel = importanceToLabel(proc.importance)
-            val memoryMb = try {
-                val memInfos = activityManager.getProcessMemoryInfo(intArrayOf(proc.pid))
-                memInfos.firstOrNull()?.totalPss?.let { it / 1024 }
-            } catch (_: Exception) {
-                null
-            }
-
-            for (pkg in pkgList) {
-                if (!result.containsKey(pkg)) {
-                    result[pkg] = ProcessDetails(
-                        pid = proc.pid,
-                        importanceLabel = importanceLabel,
-                        memoryMb = memoryMb
-                    )
-                }
-            }
-        }
-        return result
-    }
-
-    private fun importanceToLabel(importance: Int): String {
-        return when (importance) {
-            ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND -> "Foreground"
-            ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE -> "Foreground Service"
-            ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE -> "Visible"
-            ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE -> "Service"
-            ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED -> "Cached"
-            else -> "Background"
-        }
     }
 }

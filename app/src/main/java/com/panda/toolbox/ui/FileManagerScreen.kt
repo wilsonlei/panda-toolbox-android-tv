@@ -92,19 +92,12 @@ fun FileManagerScreen(
     onDeleteFromDetails: (FileItem) -> Unit,
     onConfirmDelete: (List<FileItem>) -> Unit,
     onDismissDeleteConfirm: () -> Unit,
-    onToggleAppsSelectionMode: () -> Unit,
-    onToggleAppsSelectAll: () -> Unit,
-    onRequestTerminateSelected: () -> Unit,
-    onToggleSystemApps: () -> Unit,
+    onToggleActiveOnly: () -> Unit,
     onRefreshApps: () -> Unit,
     onAppClick: (RunningAppItem) -> Unit,
     onAppLongClick: (RunningAppItem) -> Unit,
     onDismissAppDetails: () -> Unit,
-    onSelectAppFromDetails: (RunningAppItem) -> Unit,
-    onOpenAppInfo: (RunningAppItem) -> Unit,
-    onTerminateAppFromDetails: (RunningAppItem) -> Unit,
-    onConfirmTerminateApps: (List<RunningAppItem>) -> Unit,
-    onDismissTerminateConfirm: () -> Unit
+    onOpenAppInfo: (RunningAppItem) -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -239,19 +232,12 @@ fun FileManagerScreen(
             RunningAppsPane(
                 state = runningAppsState,
                 modifier = Modifier.weight(1f),
-                onToggleSelectionMode = onToggleAppsSelectionMode,
-                onToggleSelectAll = onToggleAppsSelectAll,
-                onRequestTerminateSelected = onRequestTerminateSelected,
-                onToggleSystemApps = onToggleSystemApps,
+                onToggleActiveOnly = onToggleActiveOnly,
                 onRefresh = onRefreshApps,
                 onAppClick = onAppClick,
                 onAppLongClick = onAppLongClick,
                 onDismissDetails = onDismissAppDetails,
-                onSelectFromDetails = onSelectAppFromDetails,
-                onOpenAppInfo = onOpenAppInfo,
-                onTerminateFromDetails = onTerminateAppFromDetails,
-                onConfirmTerminate = onConfirmTerminateApps,
-                onDismissTerminateConfirm = onDismissTerminateConfirm
+                onOpenAppInfo = onOpenAppInfo
             )
             return@Row
         }

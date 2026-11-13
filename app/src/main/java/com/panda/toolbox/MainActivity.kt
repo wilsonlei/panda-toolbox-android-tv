@@ -42,7 +42,6 @@ class MainActivity : ComponentActivity() {
 
     private var uiState by mutableStateOf(FileManagerUiState())
     private var runningAppsState by mutableStateOf(RunningAppsUiState())
-    private val terminatedTimestamps = HashMap<String, Long>()
     private var currentRoot: StorageRoot? = null
     private var currentDirectory: File? = null
     private var lastKnownPermissionState: Boolean? = null
@@ -63,13 +62,9 @@ class MainActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 if (uiState.activeSection == ToolboxSection.RUNNING_APPS) {
                     when {
-                        runningAppsState.terminateConfirmApps != null -> {
-                            runningAppsState = runningAppsState.copy(terminateConfirmApps = null)
-                        }
                         runningAppsState.detailApp != null -> {
                             runningAppsState = runningAppsState.copy(detailApp = null)
                         }
-                        runningAppsState.selectionMode -> exitAppsSelectionMode()
                         else -> {
                             uiState = uiState.copy(activeSection = ToolboxSection.FILE_MANAGER)
                         }
@@ -148,48 +143,19 @@ class MainActivity : ComponentActivity() {
                     },
                     onConfirmDelete = { items -> executeDelete(items) },
                     onDismissDeleteConfirm = { uiState = uiState.copy(deleteConfirmItems = null) },
-                    onToggleAppsSelectionMode = {
-                        if (runningAppsState.selectionMode) exitAppsSelectionMode() else enterAppsSelectionMode()
-                    },
-                    onToggleAppsSelectAll = { toggleAppsSelectAll() },
-                    onRequestTerminateSelected = {
-                        val selectedApps = runningAppsState.apps.filter {
-                            runningAppsState.selectedPackages.contains(it.packageName)
-                        }
-                        if (selectedApps.isNotEmpty()) {
-                            runningAppsState = runningAppsState.copy(terminateConfirmApps = selectedApps)
-                        }
-                    },
-                    onToggleSystemApps = {
+                    onToggleActiveOnly = {
                         runningAppsState = runningAppsState.copy(
-                            showSystemApps = !runningAppsState.showSystemApps
+                            activeOnly = !runningAppsState.activeOnly
                         )
                         loadRunningApps()
                     },
                     onRefreshApps = { loadRunningApps() },
-                    onAppClick = { app -> handleAppClick(app) },
-                    onAppLongClick = { app -> handleAppLongClick(app) },
+                    onAppClick = { app -> openAppInfoSettings(app.packageName) },
+                    onAppLongClick = { app -> runningAppsState = runningAppsState.copy(detailApp = app) },
                     onDismissAppDetails = { runningAppsState = runningAppsState.copy(detailApp = null) },
-                    onSelectAppFromDetails = { app ->
-                        runningAppsState = runningAppsState.copy(
-                            detailApp = null,
-                            selectionMode = true,
-                            selectedPackages = runningAppsState.selectedPackages + app.packageName
-                        )
-                    },
                     onOpenAppInfo = { app ->
                         runningAppsState = runningAppsState.copy(detailApp = null)
                         openAppInfoSettings(app.packageName)
-                    },
-                    onTerminateAppFromDetails = { app ->
-                        runningAppsState = runningAppsState.copy(
-                            detailApp = null,
-                            terminateConfirmApps = listOf(app)
-                        )
-                    },
-                    onConfirmTerminateApps = { apps -> executeTerminateApps(apps) },
-                    onDismissTerminateConfirm = {
-                        runningAppsState = runningAppsState.copy(terminateConfirmApps = null)
                     }
                 )
             }
@@ -424,116 +390,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadRunningApps() {
-        val includeSystem = runningAppsState.showSystemApps
-        val terminatedSnapshot = HashMap(terminatedTimestamps)
+        val activeOnly = runningAppsState.activeOnly
         runningAppsState = runningAppsState.copy(isLoading = true)
 
         ioExecutor.execute {
-            val apps = runningAppsRepository.getRunningApps(
-                includeSystemApps = includeSystem,
-                terminatedTimestamps = terminatedSnapshot
-            )
+            val apps = runningAppsRepository.getApps(activeOnly = activeOnly)
             val memSummary = runningAppsRepository.getMemorySummary()
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
-                val validPackages = apps.mapTo(HashSet()) { it.packageName }
-                // Clean up terminatedTimestamps for apps that actually restarted/re-launched
-                for (pkg in validPackages) {
-                    terminatedTimestamps.remove(pkg)
-                }
                 runningAppsState = runningAppsState.copy(
                     apps = apps,
                     isLoading = false,
-                    memorySummary = memSummary,
-                    selectedPackages = runningAppsState.selectedPackages.intersect(validPackages)
+                    memorySummary = memSummary
                 )
-            }
-        }
-    }
-
-    private fun handleAppClick(app: RunningAppItem) {
-        if (runningAppsState.selectionMode) {
-            toggleAppSelection(app)
-            return
-        }
-        runningAppsState = runningAppsState.copy(detailApp = app)
-    }
-
-    private fun handleAppLongClick(app: RunningAppItem) {
-        val nextSelected = if (runningAppsState.selectedPackages.contains(app.packageName)) {
-            runningAppsState.selectedPackages - app.packageName
-        } else {
-            runningAppsState.selectedPackages + app.packageName
-        }
-        runningAppsState = runningAppsState.copy(
-            selectionMode = true,
-            selectedPackages = nextSelected
-        )
-    }
-
-    private fun enterAppsSelectionMode() {
-        runningAppsState = runningAppsState.copy(selectionMode = true)
-    }
-
-    private fun exitAppsSelectionMode() {
-        if (!runningAppsState.selectionMode && runningAppsState.selectedPackages.isEmpty()) return
-        runningAppsState = runningAppsState.copy(
-            selectionMode = false,
-            selectedPackages = emptySet()
-        )
-    }
-
-    private fun toggleAppSelection(app: RunningAppItem) {
-        val nextSelected = if (runningAppsState.selectedPackages.contains(app.packageName)) {
-            runningAppsState.selectedPackages - app.packageName
-        } else {
-            runningAppsState.selectedPackages + app.packageName
-        }
-        runningAppsState = runningAppsState.copy(selectedPackages = nextSelected)
-    }
-
-    private fun toggleAppsSelectAll() {
-        val allSelected = runningAppsState.apps.isNotEmpty() &&
-            runningAppsState.selectedPackages.size == runningAppsState.apps.size
-        val nextSelected = if (allSelected) {
-            emptySet()
-        } else {
-            runningAppsState.apps.mapTo(LinkedHashSet()) { it.packageName }
-        }
-        runningAppsState = runningAppsState.copy(selectedPackages = nextSelected)
-    }
-
-    private fun executeTerminateApps(apps: List<RunningAppItem>) {
-        val packages = apps.map { it.packageName }
-        runningAppsState = runningAppsState.copy(terminateConfirmApps = null, isLoading = true)
-
-        ioExecutor.execute {
-            val result = runningAppsRepository.terminateApps(packages)
-            val failedSet = result.failedPackages.toSet()
-            mainHandler.post {
-                if (isFinishing || isDestroyed) return@post
-                val now = System.currentTimeMillis()
-                for (pkg in packages) {
-                    if (!failedSet.contains(pkg)) {
-                        terminatedTimestamps[pkg] = now
-                    }
-                }
-                val message = when {
-                    result.terminatedCount > 0 && result.failedPackages.isEmpty() ->
-                        getString(R.string.terminated_toast, result.terminatedCount)
-                    result.terminatedCount > 0 ->
-                        getString(
-                            R.string.terminate_partial_toast,
-                            result.terminatedCount,
-                            result.failedPackages.size
-                        )
-                    else ->
-                        getString(R.string.terminate_failed_toast)
-                }
-                Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-
-                exitAppsSelectionMode()
-                loadRunningApps()
             }
         }
     }
