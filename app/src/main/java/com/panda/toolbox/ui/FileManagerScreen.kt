@@ -43,11 +43,18 @@ import com.panda.toolbox.R
 import com.panda.toolbox.data.FileRepository
 import com.panda.toolbox.model.FileItem
 import com.panda.toolbox.model.FileType
+import com.panda.toolbox.model.RunningAppItem
 import com.panda.toolbox.model.SortOrder
 import com.panda.toolbox.model.StorageRoot
 import java.util.Locale
 
+enum class ToolboxSection {
+    FILE_MANAGER,
+    RUNNING_APPS
+}
+
 data class FileManagerUiState(
+    val activeSection: ToolboxSection = ToolboxSection.FILE_MANAGER,
     val storageRoots: List<StorageRoot> = emptyList(),
     val activeRootPath: String? = null,
     val currentPath: String = "",
@@ -68,6 +75,8 @@ data class FileManagerUiState(
 @Composable
 fun FileManagerScreen(
     state: FileManagerUiState,
+    runningAppsState: RunningAppsUiState,
+    onSelectRunningApps: () -> Unit,
     onSelectRoot: (StorageRoot) -> Unit,
     onNavigateUp: () -> Unit,
     onToggleSelectionMode: () -> Unit,
@@ -82,7 +91,20 @@ fun FileManagerScreen(
     onSelectFromDetails: (FileItem) -> Unit,
     onDeleteFromDetails: (FileItem) -> Unit,
     onConfirmDelete: (List<FileItem>) -> Unit,
-    onDismissDeleteConfirm: () -> Unit
+    onDismissDeleteConfirm: () -> Unit,
+    onToggleAppsSelectionMode: () -> Unit,
+    onToggleAppsSelectAll: () -> Unit,
+    onRequestTerminateSelected: () -> Unit,
+    onToggleSystemApps: () -> Unit,
+    onRefreshApps: () -> Unit,
+    onAppClick: (RunningAppItem) -> Unit,
+    onAppLongClick: (RunningAppItem) -> Unit,
+    onDismissAppDetails: () -> Unit,
+    onSelectAppFromDetails: (RunningAppItem) -> Unit,
+    onOpenAppInfo: (RunningAppItem) -> Unit,
+    onTerminateAppFromDetails: (RunningAppItem) -> Unit,
+    onConfirmTerminateApps: (List<RunningAppItem>) -> Unit,
+    onDismissTerminateConfirm: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -111,13 +133,49 @@ fun FileManagerScreen(
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = stringResource(R.string.tools_section_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                val isRunningAppsActive = state.activeSection == ToolboxSection.RUNNING_APPS
+                ListItem(
+                    selected = isRunningAppsActive,
+                    onClick = onSelectRunningApps,
+                    leadingContent = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_apps),
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                            tint = if (isRunningAppsActive) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            text = stringResource(R.string.running_apps_title),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     text = stringResource(R.string.sidebar_title),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(
                     modifier = Modifier.weight(1f),
@@ -127,7 +185,8 @@ fun FileManagerScreen(
                         items = state.storageRoots,
                         key = { it.directory.absolutePath }
                     ) { root ->
-                        val isActive = root.directory.absolutePath == state.activeRootPath
+                        val isActive = state.activeSection == ToolboxSection.FILE_MANAGER &&
+                            root.directory.absolutePath == state.activeRootPath
                         ListItem(
                             selected = isActive,
                             onClick = { onSelectRoot(root) },
@@ -158,10 +217,15 @@ fun FileManagerScreen(
                     }
                 }
 
-                if (state.storageSpaceSummary.isNotEmpty()) {
+                val footerSummary = if (isRunningAppsActive) {
+                    runningAppsState.memorySummary
+                } else {
+                    state.storageSpaceSummary
+                }
+                if (footerSummary.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = state.storageSpaceSummary,
+                        text = footerSummary,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -170,6 +234,27 @@ fun FileManagerScreen(
         }
 
         Spacer(modifier = Modifier.width(20.dp))
+
+        if (state.activeSection == ToolboxSection.RUNNING_APPS) {
+            RunningAppsPane(
+                state = runningAppsState,
+                modifier = Modifier.weight(1f),
+                onToggleSelectionMode = onToggleAppsSelectionMode,
+                onToggleSelectAll = onToggleAppsSelectAll,
+                onRequestTerminateSelected = onRequestTerminateSelected,
+                onToggleSystemApps = onToggleSystemApps,
+                onRefresh = onRefreshApps,
+                onAppClick = onAppClick,
+                onAppLongClick = onAppLongClick,
+                onDismissDetails = onDismissAppDetails,
+                onSelectFromDetails = onSelectAppFromDetails,
+                onOpenAppInfo = onOpenAppInfo,
+                onTerminateFromDetails = onTerminateAppFromDetails,
+                onConfirmTerminate = onConfirmTerminateApps,
+                onDismissTerminateConfirm = onDismissTerminateConfirm
+            )
+            return@Row
+        }
 
         // Right Main Pane: File Browser
         Column(

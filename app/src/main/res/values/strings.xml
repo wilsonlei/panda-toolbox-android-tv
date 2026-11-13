@@ -36,4 +36,24 @@
     <string name="storage_pictures">Pictures</string>
     <string name="storage_documents">Documents</string>
     <string name="storage_external">External Storage</string>
+    <string name="tools_section_title">Tools</string>
+    <string name="running_apps_title">Running Apps</string>
+    <string name="system_apps_on">System: On</string>
+    <string name="system_apps_off">System: Off</string>
+    <string name="terminate_selected">Terminate (%d)</string>
+    <string name="loading_text">Loading…</string>
+    <string name="no_running_apps">No running apps found</string>
+    <string name="apps_count">%d apps</string>
+    <string name="one_app">1 app</string>
+    <string name="system_badge">SYSTEM</string>
+    <string name="active_badge">ACTIVE</string>
+    <string name="app_details_title">App Details</string>
+    <string name="app_info_action">App Info</string>
+    <string name="terminate_action">Terminate</string>
+    <string name="terminate_confirm_title">Terminate %s?</string>
+    <string name="terminate_confirm_single">Terminate background processes for "%1$s" (%2$s)?</string>
+    <string name="terminate_confirm_multi">Terminate background processes for %d selected apps?</string>
+    <string name="terminated_toast">Terminated %d app(s)</string>
+    <string name="terminate_partial_toast">Terminated %1$d app(s), %2$d failed</string>
+    <string name="terminate_failed_toast">Failed to terminate selected app(s)</string>
 </resources>
