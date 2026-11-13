@@ -1,0 +1,18 @@
+<resources>
+    <color name="tv_background">#11161D</color>
+    <color name="tv_sidebar_background">#161D26</color>
+    <color name="tv_surface">#1E2733</color>
+    <color name="tv_surface_focused">#263344</color>
+    <color name="tv_surface_selected">#1E3A5F</color>
+    <color name="tv_accent">#38BDF8</color>
+    <color name="tv_accent_dark">#0284C7</color>
+    <color name="tv_danger">#EF4444</color>
+    <color name="tv_danger_focused">#DC2626</color>
+    <color name="tv_warning_bg">#3B2314</color>
+    <color name="tv_warning_border">#F59E0B</color>
+    <color name="tv_text_primary">#F8FAFC</color>
+    <color name="tv_text_secondary">#94A3B8</color>
+    <color name="tv_divider">#293545</color>
+    <color name="tv_folder_tint">#FBBF24</color>
+    <color name="tv_file_tint">#94A3B8</color>
+</resources>
