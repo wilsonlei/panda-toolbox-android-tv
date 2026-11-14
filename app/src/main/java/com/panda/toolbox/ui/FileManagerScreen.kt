@@ -68,7 +68,9 @@ data class FileManagerUiState(
     val selectedPaths: Set<String> = emptySet(),
     val hasStoragePermission: Boolean = true,
     val detailItem: FileItem? = null,
-    val deleteConfirmItems: List<FileItem>? = null
+    val deleteConfirmItems: List<FileItem>? = null,
+    val viewingImageItem: FileItem? = null,
+    val viewingVideoItem: FileItem? = null
 )
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -88,10 +90,10 @@ fun FileManagerScreen(
     onItemClick: (FileItem) -> Unit,
     onItemLongClick: (FileItem) -> Unit,
     onDismissDetails: () -> Unit,
-    onSelectFromDetails: (FileItem) -> Unit,
-    onDeleteFromDetails: (FileItem) -> Unit,
     onConfirmDelete: (List<FileItem>) -> Unit,
     onDismissDeleteConfirm: () -> Unit,
+    onDismissImageViewer: () -> Unit,
+    onDismissVideoViewer: () -> Unit,
     onToggleActiveOnly: () -> Unit,
     onRefreshApps: () -> Unit,
     onAppClick: (RunningAppItem) -> Unit,
@@ -419,9 +421,7 @@ fun FileManagerScreen(
     state.detailItem?.let { item ->
         FileDetailsDialog(
             item = item,
-            onDismiss = onDismissDetails,
-            onSelect = { onSelectFromDetails(item) },
-            onDelete = { onDeleteFromDetails(item) }
+            onDismiss = onDismissDetails
         )
     }
 
@@ -431,6 +431,22 @@ fun FileManagerScreen(
             items = itemsToDelete,
             onConfirm = { onConfirmDelete(itemsToDelete) },
             onDismiss = onDismissDeleteConfirm
+        )
+    }
+
+    // In-App Image Viewer
+    state.viewingImageItem?.let { item ->
+        ImageViewerOverlay(
+            item = item,
+            onClose = onDismissImageViewer
+        )
+    }
+
+    // In-App Video Player
+    state.viewingVideoItem?.let { item ->
+        VideoViewerOverlay(
+            item = item,
+            onClose = onDismissVideoViewer
         )
     }
 }
@@ -539,9 +555,7 @@ private fun FileRow(
 @Composable
 private fun FileDetailsDialog(
     item: FileItem,
-    onDismiss: () -> Unit,
-    onSelect: () -> Unit,
-    onDelete: () -> Unit
+    onDismiss: () -> Unit
 ) {
     val sizeStr = FileRepository.formatSize(item.sizeBytes)
     val dateStr = FileRepository.formatDate(item.lastModified)
@@ -579,24 +593,10 @@ private fun FileDetailsDialog(
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    OutlinedButton(onClick = onDismiss) {
-                        Text(text = stringResource(R.string.cancel_action))
-                    }
-                    OutlinedButton(onClick = onSelect) {
-                        Text(text = stringResource(R.string.select_item_action))
-                    }
-                    Button(
-                        onClick = onDelete,
-                        colors = ButtonDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError,
-                            focusedContainerColor = Color(0xFFDC2626),
-                            focusedContentColor = Color.White
-                        )
-                    ) {
-                        Text(text = stringResource(R.string.delete_action))
+                    Button(onClick = onDismiss) {
+                        Text(text = stringResource(R.string.close_action))
                     }
                 }
             }

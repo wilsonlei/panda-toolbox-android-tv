@@ -20,9 +20,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.panda.toolbox.data.FileRepository
 import com.panda.toolbox.data.RunningAppsRepository
 import com.panda.toolbox.model.FileItem
+import com.panda.toolbox.model.FileType
 import com.panda.toolbox.model.RunningAppItem
 import com.panda.toolbox.model.StorageRoot
 import com.panda.toolbox.ui.FileManagerScreen
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private var currentRoot: StorageRoot? = null
     private var currentDirectory: File? = null
     private var lastKnownPermissionState: Boolean? = null
+    private var pendingApkInstall: FileItem? = null
 
     private val legacyPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -73,6 +76,12 @@ class MainActivity : ComponentActivity() {
                 }
 
                 when {
+                    uiState.viewingVideoItem != null -> {
+                        uiState = uiState.copy(viewingVideoItem = null)
+                    }
+                    uiState.viewingImageItem != null -> {
+                        uiState = uiState.copy(viewingImageItem = null)
+                    }
                     uiState.deleteConfirmItems != null -> {
                         uiState = uiState.copy(deleteConfirmItems = null)
                     }
@@ -128,21 +137,10 @@ class MainActivity : ComponentActivity() {
                     onItemClick = { item -> handleItemClick(item) },
                     onItemLongClick = { item -> handleItemLongClick(item) },
                     onDismissDetails = { uiState = uiState.copy(detailItem = null) },
-                    onSelectFromDetails = { item ->
-                        uiState = uiState.copy(
-                            detailItem = null,
-                            selectionMode = true,
-                            selectedPaths = uiState.selectedPaths + item.path
-                        )
-                    },
-                    onDeleteFromDetails = { item ->
-                        uiState = uiState.copy(
-                            detailItem = null,
-                            deleteConfirmItems = listOf(item)
-                        )
-                    },
                     onConfirmDelete = { items -> executeDelete(items) },
                     onDismissDeleteConfirm = { uiState = uiState.copy(deleteConfirmItems = null) },
+                    onDismissImageViewer = { uiState = uiState.copy(viewingImageItem = null) },
+                    onDismissVideoViewer = { uiState = uiState.copy(viewingVideoItem = null) },
                     onToggleActiveOnly = {
                         runningAppsState = runningAppsState.copy(
                             activeOnly = !runningAppsState.activeOnly
@@ -174,6 +172,13 @@ class MainActivity : ComponentActivity() {
         lastKnownPermissionState = hasAccess
         if (uiState.activeSection == ToolboxSection.RUNNING_APPS) {
             loadRunningApps()
+        }
+        val pendingApk = pendingApkInstall
+        if (pendingApk != null) {
+            pendingApkInstall = null
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+                launchApkInstaller(pendingApk)
+            }
         }
     }
 
@@ -256,10 +261,46 @@ class MainActivity : ComponentActivity() {
             toggleItemSelection(item)
             return
         }
-        if (item.isDirectory) {
-            navigateTo(item.file)
-        } else {
-            uiState = uiState.copy(detailItem = item)
+        when {
+            item.isDirectory -> navigateTo(item.file)
+            item.type == FileType.IMAGE -> uiState = uiState.copy(viewingImageItem = item)
+            item.type == FileType.VIDEO -> uiState = uiState.copy(viewingVideoItem = item)
+            item.extension == "apk" -> installApk(item)
+            else -> uiState = uiState.copy(detailItem = item)
+        }
+    }
+
+    private fun installApk(item: FileItem) {
+        if (!item.file.exists()) {
+            Toast.makeText(this, getString(R.string.apk_install_failed), Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            pendingApkInstall = item
+            Toast.makeText(this, getString(R.string.allow_unknown_apps_toast), Toast.LENGTH_LONG).show()
+            try {
+                val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(settingsIntent)
+                return
+            } catch (_: ActivityNotFoundException) {
+                pendingApkInstall = null
+            }
+        }
+        launchApkInstaller(item)
+    }
+
+    private fun launchApkInstaller(item: FileItem) {
+        try {
+            val apkUri = FileProvider.getUriForFile(this, "$packageName.fileprovider", item.file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, getString(R.string.apk_install_failed), Toast.LENGTH_SHORT).show()
         }
     }
 
