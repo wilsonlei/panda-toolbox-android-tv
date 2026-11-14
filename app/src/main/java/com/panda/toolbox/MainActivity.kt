@@ -30,11 +30,11 @@ import com.panda.toolbox.model.FileType
 import com.panda.toolbox.model.RunningAppItem
 import com.panda.toolbox.model.SortOrder
 import com.panda.toolbox.model.StorageRoot
-import com.panda.toolbox.ui.FileManagerScreen
-import com.panda.toolbox.ui.FileManagerUiState
 import com.panda.toolbox.ui.FtpServerUiState
 import com.panda.toolbox.ui.RunningAppsUiState
+import com.panda.toolbox.ui.ToolboxScreen
 import com.panda.toolbox.ui.ToolboxSection
+import com.panda.toolbox.ui.filemanager.FileManagerUiState
 import com.panda.toolbox.ui.theme.PandaTvTheme
 import java.io.File
 import java.util.concurrent.Executors
@@ -159,7 +159,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             PandaTvTheme {
-                FileManagerScreen(
+                ToolboxScreen(
                     state = uiState,
                     runningAppsState = runningAppsState,
                     ftpServerState = ftpServerState,

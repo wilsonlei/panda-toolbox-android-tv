@@ -1,4 +1,4 @@
-package com.panda.toolbox.ui
+package com.panda.toolbox.ui.filemanager
 
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
