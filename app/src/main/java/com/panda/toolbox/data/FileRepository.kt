@@ -40,10 +40,6 @@ class FileRepository(private val context: Context) {
         val primary = Environment.getExternalStorageDirectory()
         addIfValid(context.getString(R.string.storage_internal), primary)
 
-        if (primary != null) {
-            addIfValid(context.getString(R.string.storage_documents), File(primary, "Documents"))
-        }
-
         // Discover mounted external USB / SD card volumes
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
