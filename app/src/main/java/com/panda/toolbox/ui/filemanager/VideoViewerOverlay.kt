@@ -1,6 +1,7 @@
 package com.panda.toolbox.ui.filemanager
 
-import android.widget.VideoView
+import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,6 +38,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +47,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Button
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
@@ -54,18 +62,26 @@ import androidx.tv.material3.Text
 import com.panda.toolbox.R
 import com.panda.toolbox.model.FileItem
 import kotlinx.coroutines.delay
+import java.io.File
 import java.util.Locale
 
 internal const val SEEK_STEP_MS = 10_000
 internal const val OVERLAY_AUTO_HIDE_MS = 3_000L
 
-@OptIn(ExperimentalTvMaterial3Api::class)
+@OptIn(ExperimentalTvMaterial3Api::class, UnstableApi::class)
 @Composable
 fun VideoViewerOverlay(
     item: FileItem,
     onClose: () -> Unit
 ) {
-    var videoViewRef by remember(item.path) { mutableStateOf<VideoView?>(null) }
+    val context = LocalContext.current
+    val exoPlayer = remember(item.path) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.fromFile(File(item.path))))
+            playWhenReady = true
+            prepare()
+        }
+    }
     var isPrepared by remember(item.path) { mutableStateOf(false) }
     var isPlaying by remember(item.path) { mutableStateOf(false) }
     var hasError by remember(item.path) { mutableStateOf(false) }
@@ -77,24 +93,23 @@ fun VideoViewerOverlay(
     val playPauseFocusRequester = remember { FocusRequester() }
 
     fun togglePlayback() {
-        val view = videoViewRef ?: return
         if (!isPrepared) return
-        if (view.isPlaying) {
-            view.pause()
-            isPlaying = false
+        if (exoPlayer.playbackState == Player.STATE_ENDED) {
+            exoPlayer.seekTo(0L)
+            exoPlayer.play()
+        } else if (exoPlayer.isPlaying) {
+            exoPlayer.pause()
         } else {
-            view.start()
-            isPlaying = true
+            exoPlayer.play()
         }
     }
 
     fun seekBy(deltaMs: Int) {
-        val view = videoViewRef ?: return
         if (!isPrepared) return
-        val maxPos = if (durationMs > 0) durationMs else view.duration.coerceAtLeast(0)
-        val target = (view.currentPosition + deltaMs).coerceIn(0, maxPos)
-        view.seekTo(target)
-        positionMs = target
+        val maxPos = if (durationMs > 0) durationMs.toLong() else exoPlayer.duration.coerceAtLeast(0L)
+        val target = (exoPlayer.currentPosition + deltaMs).coerceIn(0L, maxPos)
+        exoPlayer.seekTo(target)
+        positionMs = target.toInt()
     }
 
     LaunchedEffect(showOverlay, interactionTick) {
@@ -114,15 +129,42 @@ fun VideoViewerOverlay(
 
     LaunchedEffect(isPrepared, isPlaying, item.path) {
         while (isPrepared && isPlaying) {
-            positionMs = videoViewRef?.currentPosition?.coerceAtLeast(0) ?: positionMs
+            positionMs = exoPlayer.currentPosition.coerceAtLeast(0L).toInt()
             delay(500L)
         }
     }
 
-    DisposableEffect(item.path) {
+    DisposableEffect(exoPlayer) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                when (playbackState) {
+                    Player.STATE_READY -> {
+                        isPrepared = true
+                        hasError = false
+                        durationMs = exoPlayer.duration.coerceAtLeast(0L).toInt()
+                    }
+                    Player.STATE_ENDED -> {
+                        isPlaying = false
+                        positionMs = durationMs
+                    }
+                    else -> Unit
+                }
+            }
+
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                hasError = true
+                isPrepared = false
+                isPlaying = false
+            }
+        }
+        exoPlayer.addListener(listener)
         onDispose {
-            videoViewRef?.stopPlayback()
-            videoViewRef = null
+            exoPlayer.removeListener(listener)
+            exoPlayer.release()
         }
     }
 
@@ -167,29 +209,18 @@ fun VideoViewerOverlay(
                 }
         ) {
         AndroidView(
-            factory = { context ->
-                VideoView(context).apply {
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    useController = false
                     isFocusable = false
                     isFocusableInTouchMode = false
-                    videoViewRef = this
-                    setOnPreparedListener { mp ->
-                        isPrepared = true
-                        hasError = false
-                        durationMs = mp.duration.coerceAtLeast(0)
-                        start()
-                        isPlaying = true
-                    }
-                    setOnCompletionListener {
-                        isPlaying = false
-                        positionMs = durationMs
-                    }
-                    setOnErrorListener { _, _, _ ->
-                        hasError = true
-                        isPrepared = false
-                        isPlaying = false
-                        true
-                    }
-                    setVideoPath(item.path)
+                    setShutterBackgroundColor(android.graphics.Color.BLACK)
+                    player = exoPlayer
+                }
+            },
+            update = { playerView ->
+                if (playerView.player !== exoPlayer) {
+                    playerView.player = exoPlayer
                 }
             },
             modifier = Modifier
