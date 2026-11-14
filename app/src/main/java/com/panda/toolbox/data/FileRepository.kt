@@ -102,6 +102,10 @@ class FileRepository(private val context: Context) {
                 compareBy<FileItem> { !it.isDirectory }.thenByDescending { it.sizeBytes }
                     .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
             )
+            SortOrder.DATE_ASC -> mapped.sortedWith(
+                compareBy<FileItem> { !it.isDirectory }.thenBy { it.lastModified }
+                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+            )
             SortOrder.DATE_DESC -> mapped.sortedWith(
                 compareBy<FileItem> { !it.isDirectory }.thenByDescending { it.lastModified }
                     .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }

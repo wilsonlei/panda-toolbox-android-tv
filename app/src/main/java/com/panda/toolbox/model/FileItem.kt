@@ -13,8 +13,9 @@ enum class FileType {
 enum class SortOrder {
     NAME_ASC,
     NAME_DESC,
-    SIZE_DESC,
-    DATE_DESC;
+    DATE_ASC,
+    DATE_DESC,
+    SIZE_DESC;
 
     fun next(): SortOrder {
         val values = entries

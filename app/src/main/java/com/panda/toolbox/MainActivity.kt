@@ -26,6 +26,7 @@ import com.panda.toolbox.data.RunningAppsRepository
 import com.panda.toolbox.model.FileItem
 import com.panda.toolbox.model.FileType
 import com.panda.toolbox.model.RunningAppItem
+import com.panda.toolbox.model.SortOrder
 import com.panda.toolbox.model.StorageRoot
 import com.panda.toolbox.ui.FileManagerScreen
 import com.panda.toolbox.ui.FileManagerUiState
@@ -60,6 +61,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         repository = FileRepository(this)
         runningAppsRepository = RunningAppsRepository(this)
+        uiState = uiState.copy(sortOrder = loadSavedSortOrder())
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -81,6 +83,9 @@ class MainActivity : ComponentActivity() {
                     }
                     uiState.viewingImageItem != null -> {
                         uiState = uiState.copy(viewingImageItem = null)
+                    }
+                    uiState.showSortDialog -> {
+                        uiState = uiState.copy(showSortDialog = false)
                     }
                     uiState.deleteConfirmItems != null -> {
                         uiState = uiState.copy(deleteConfirmItems = null)
@@ -128,9 +133,16 @@ class MainActivity : ComponentActivity() {
                             uiState = uiState.copy(deleteConfirmItems = selectedItems)
                         }
                     },
-                    onCycleSort = {
-                        uiState = uiState.copy(sortOrder = uiState.sortOrder.next())
+                    onOpenSortDialog = {
+                        uiState = uiState.copy(showSortDialog = true)
+                    },
+                    onSelectSortOrder = { order ->
+                        saveSortOrder(order)
+                        uiState = uiState.copy(sortOrder = order, showSortDialog = false)
                         loadCurrentDirectory()
+                    },
+                    onDismissSortDialog = {
+                        uiState = uiState.copy(showSortDialog = false)
                     },
                     onRefresh = { loadStorageRoots() },
                     onGrantPermission = { requestStoragePermission() },
@@ -446,5 +458,23 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    private fun loadSavedSortOrder(): SortOrder {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val savedName = prefs.getString(KEY_SORT_ORDER, null)
+        return SortOrder.entries.firstOrNull { it.name == savedName } ?: SortOrder.NAME_ASC
+    }
+
+    private fun saveSortOrder(order: SortOrder) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SORT_ORDER, order.name)
+            .apply()
+    }
+
+    companion object {
+        private const val PREFS_NAME = "panda_toolbox_prefs"
+        private const val KEY_SORT_ORDER = "sort_order"
     }
 }

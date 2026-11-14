@@ -29,7 +29,9 @@
     <string name="sort_name_asc">Name (A–Z)</string>
     <string name="sort_name_desc">Name (Z–A)</string>
     <string name="sort_size_desc">Size (Largest)</string>
+    <string name="sort_date_asc">Date (Oldest)</string>
     <string name="sort_date_desc">Date (Newest)</string>
+    <string name="sort_dialog_title">Sort Files</string>
     <string name="storage_internal">Internal Storage</string>
     <string name="storage_downloads">Downloads</string>
     <string name="storage_movies">Movies</string>

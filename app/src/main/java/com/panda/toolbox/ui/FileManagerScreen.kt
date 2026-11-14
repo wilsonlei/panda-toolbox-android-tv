@@ -70,7 +70,8 @@ data class FileManagerUiState(
     val detailItem: FileItem? = null,
     val deleteConfirmItems: List<FileItem>? = null,
     val viewingImageItem: FileItem? = null,
-    val viewingVideoItem: FileItem? = null
+    val viewingVideoItem: FileItem? = null,
+    val showSortDialog: Boolean = false
 )
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -84,7 +85,9 @@ fun FileManagerScreen(
     onToggleSelectionMode: () -> Unit,
     onToggleSelectAll: () -> Unit,
     onRequestDeleteSelected: () -> Unit,
-    onCycleSort: () -> Unit,
+    onOpenSortDialog: () -> Unit,
+    onSelectSortOrder: (SortOrder) -> Unit,
+    onDismissSortDialog: () -> Unit,
     onRefresh: () -> Unit,
     onGrantPermission: () -> Unit,
     onItemClick: (FileItem) -> Unit,
@@ -311,7 +314,7 @@ fun FileManagerScreen(
                     }
                 }
 
-                OutlinedButton(onClick = onCycleSort) {
+                OutlinedButton(onClick = onOpenSortDialog) {
                     Text(text = stringResource(R.string.sort_button, sortOrderLabel(state.sortOrder)))
                 }
 
@@ -431,6 +434,15 @@ fun FileManagerScreen(
             items = itemsToDelete,
             onConfirm = { onConfirmDelete(itemsToDelete) },
             onDismiss = onDismissDeleteConfirm
+        )
+    }
+
+    // Sort Options Dialog
+    if (state.showSortDialog) {
+        SortOptionsDialog(
+            currentOrder = state.sortOrder,
+            onSelectOrder = onSelectSortOrder,
+            onDismiss = onDismissSortDialog
         )
     }
 
@@ -683,13 +695,90 @@ private fun DeleteConfirmDialog(
     }
 }
 
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun SortOptionsDialog(
+    currentOrder: SortOrder,
+    onSelectOrder: (SortOrder) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val options = listOf(
+        SortOrder.NAME_ASC,
+        SortOrder.NAME_DESC,
+        SortOrder.DATE_ASC,
+        SortOrder.DATE_DESC,
+        SortOrder.SIZE_DESC
+    )
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            colors = SurfaceDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(420.dp)
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.sort_dialog_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                options.forEach { order ->
+                    val isSelected = order == currentOrder
+                    ListItem(
+                        selected = isSelected,
+                        onClick = { onSelectOrder(order) },
+                        headlineContent = {
+                            Text(
+                                text = sortOrderLabel(order),
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        trailingContent = {
+                            if (isSelected) {
+                                Text(
+                                    text = "✓",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(onClick = onDismiss) {
+                        Text(text = stringResource(R.string.close_action))
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun sortOrderLabel(sortOrder: SortOrder): String {
     return when (sortOrder) {
         SortOrder.NAME_ASC -> stringResource(R.string.sort_name_asc)
         SortOrder.NAME_DESC -> stringResource(R.string.sort_name_desc)
-        SortOrder.SIZE_DESC -> stringResource(R.string.sort_size_desc)
+        SortOrder.DATE_ASC -> stringResource(R.string.sort_date_asc)
         SortOrder.DATE_DESC -> stringResource(R.string.sort_date_desc)
+        SortOrder.SIZE_DESC -> stringResource(R.string.sort_size_desc)
     }
 }
 
