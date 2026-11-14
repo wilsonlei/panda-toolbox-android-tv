@@ -1,6 +1,7 @@
 package com.panda.toolbox.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -24,11 +27,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +65,7 @@ import com.panda.toolbox.model.FileType
 import com.panda.toolbox.model.RunningAppItem
 import com.panda.toolbox.model.SortOrder
 import com.panda.toolbox.model.StorageRoot
+import java.io.File
 import java.util.Locale
 
 enum class ToolboxSection {
@@ -80,7 +92,11 @@ data class FileManagerUiState(
     val deleteConfirmItems: List<FileItem>? = null,
     val viewingImageItem: FileItem? = null,
     val viewingVideoItem: FileItem? = null,
-    val showSortDialog: Boolean = false
+    val showSortDialog: Boolean = false,
+    val showQuitDialog: Boolean = false,
+    val isFocusInContent: Boolean = false,
+    val focusSidebarTick: Int = 0,
+    val focusContentTick: Int = 0
 )
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -107,6 +123,8 @@ fun FileManagerScreen(
     onDismissDetails: () -> Unit,
     onConfirmDelete: (List<FileItem>) -> Unit,
     onDismissDeleteConfirm: () -> Unit,
+    onConfirmQuit: () -> Unit,
+    onDismissQuitDialog: () -> Unit,
     onDismissImageViewer: () -> Unit,
     onDismissVideoViewer: () -> Unit,
     onToggleActiveOnly: () -> Unit,
@@ -114,10 +132,107 @@ fun FileManagerScreen(
     onAppClick: (RunningAppItem) -> Unit,
     onAppLongClick: (RunningAppItem) -> Unit,
     onDismissAppDetails: () -> Unit,
-    onOpenAppInfo: (RunningAppItem) -> Unit
+    onOpenAppInfo: (RunningAppItem) -> Unit,
+    onContentFocusChanged: (Boolean) -> Unit
 ) {
     val itemFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
+    val sidebarRootFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
+    val fileListState = rememberLazyListState()
+    val firstFileFocusRequester = remember { FocusRequester() }
+    val parentRowFocusRequester = remember { FocusRequester() }
+    val transitionFocusHoldRequester = remember { FocusRequester() }
+    val fileFallbackFocusRequester = remember { FocusRequester() }
+    val runningAppsSidebarFocusRequester = remember { FocusRequester() }
+    val ftpServerSidebarFocusRequester = remember { FocusRequester() }
+    val runningAppsContentFocusRequester = remember { FocusRequester() }
+    val ftpServerContentFocusRequester = remember { FocusRequester() }
+    val initialSidebarFocusRequester = remember { FocusRequester() }
+    var hasRequestedInitialFocus by remember { mutableStateOf(false) }
     var pendingRestoreFocusPath by remember { mutableStateOf<String?>(null) }
+    var lastLoadedPath by remember { mutableStateOf<String?>(null) }
+    var isTransitioningFolder by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.storageRoots) {
+        if (!hasRequestedInitialFocus && state.storageRoots.isNotEmpty()) {
+            hasRequestedInitialFocus = true
+            runCatching { initialSidebarFocusRequester.requestFocus() }
+        }
+    }
+
+    LaunchedEffect(state.focusSidebarTick) {
+        if (state.focusSidebarTick > 0) {
+            val targetRequester = when (state.activeSection) {
+                ToolboxSection.RUNNING_APPS -> runningAppsSidebarFocusRequester
+                ToolboxSection.FTP_SERVER -> ftpServerSidebarFocusRequester
+                ToolboxSection.FILE_MANAGER -> {
+                    state.activeRootPath?.let { sidebarRootFocusRequesters[it] }
+                        ?: initialSidebarFocusRequester
+                }
+            }
+            runCatching { targetRequester.requestFocus() }
+        }
+    }
+
+    LaunchedEffect(state.focusContentTick, state.activeSection, state.isLoading) {
+        if (state.focusContentTick > 0) {
+            when (state.activeSection) {
+                ToolboxSection.RUNNING_APPS -> {
+                    runCatching { runningAppsContentFocusRequester.requestFocus() }
+                }
+                ToolboxSection.FTP_SERVER -> {
+                    runCatching { ftpServerContentFocusRequester.requestFocus() }
+                }
+                ToolboxSection.FILE_MANAGER -> {
+                    if (!state.isLoading) {
+                        lastLoadedPath = state.currentPath
+                        if (state.canNavigateUp || state.items.isNotEmpty()) {
+                            runCatching { fileListState.scrollToItem(0) }
+                            withFrameNanos { }
+                        }
+                        when {
+                            state.canNavigateUp -> {
+                                runCatching { parentRowFocusRequester.requestFocus() }
+                            }
+                            state.items.isNotEmpty() -> {
+                                runCatching { firstFileFocusRequester.requestFocus() }
+                            }
+                            else -> {
+                                runCatching { fileFallbackFocusRequester.requestFocus() }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(state.currentPath, state.isLoading) {
+        if (state.isLoading) {
+            if (lastLoadedPath != null) {
+                isTransitioningFolder = true
+                runCatching { transitionFocusHoldRequester.requestFocus() }
+            }
+            return@LaunchedEffect
+        }
+        if (state.currentPath.isNotEmpty()) {
+            val isInitialLoad = lastLoadedPath == null
+            val pathChanged = lastLoadedPath != state.currentPath
+            lastLoadedPath = state.currentPath
+            if (!isInitialLoad && pathChanged && state.activeSection == ToolboxSection.FILE_MANAGER) {
+                isTransitioningFolder = true
+                if (state.canNavigateUp || state.items.isNotEmpty()) {
+                    runCatching { fileListState.scrollToItem(0) }
+                    withFrameNanos { }
+                }
+                if (state.canNavigateUp) {
+                    runCatching { parentRowFocusRequester.requestFocus() }
+                } else if (state.items.isNotEmpty()) {
+                    runCatching { firstFileFocusRequester.requestFocus() }
+                }
+            }
+        }
+        isTransitioningFolder = false
+    }
 
     LaunchedEffect(state.viewingImageItem, state.viewingVideoItem, state.detailItem) {
         if (state.viewingImageItem == null &&
@@ -142,7 +257,25 @@ fun FileManagerScreen(
         Surface(
             modifier = Modifier
                 .width(230.dp)
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown &&
+                        event.key == Key.DirectionRight &&
+                        state.activeSection == ToolboxSection.FILE_MANAGER
+                    ) {
+                        when {
+                            state.canNavigateUp -> {
+                                runCatching { parentRowFocusRequester.requestFocus() }
+                                return@onPreviewKeyEvent true
+                            }
+                            state.items.isNotEmpty() -> {
+                                runCatching { firstFileFocusRequester.requestFocus() }
+                                return@onPreviewKeyEvent true
+                            }
+                        }
+                    }
+                    false
+                },
             shape = RoundedCornerShape(14.dp),
             colors = SurfaceDefaults.colors(
                 containerColor = Color(0xFF161D26)
@@ -166,10 +299,78 @@ fun FileManagerScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(6.dp))
+
+                val internalLabel = stringResource(R.string.storage_internal)
+                val internalRoot = state.storageRoots.firstOrNull { it.label == internalLabel }
+                    ?: state.storageRoots.firstOrNull()
+                val otherRoots = if (internalRoot != null) {
+                    state.storageRoots.filter { it.directory.absolutePath != internalRoot.directory.absolutePath }
+                } else {
+                    emptyList()
+                }
+
+                if (internalRoot != null) {
+                    val internalPath = internalRoot.directory.absolutePath
+                    val isInternalActive = state.activeSection == ToolboxSection.FILE_MANAGER &&
+                        internalPath == state.activeRootPath
+                    val internalFocusRequester = remember(internalPath) {
+                        sidebarRootFocusRequesters.getOrPut(internalPath) { FocusRequester() }
+                    }
+                    DisposableEffect(internalPath) {
+                        onDispose {
+                            sidebarRootFocusRequesters.remove(internalPath)
+                        }
+                    }
+                    ListItem(
+                        selected = isInternalActive,
+                        onClick = { onSelectRoot(internalRoot) },
+                        modifier = Modifier
+                            .focusRequester(internalFocusRequester)
+                            .focusRequester(initialSidebarFocusRequester)
+                            .focusProperties {
+                                canFocus = !state.isFocusInContent
+                                right = when {
+                                    state.activeSection != ToolboxSection.FILE_MANAGER ->
+                                        FocusRequester.Default
+                                    state.canNavigateUp -> parentRowFocusRequester
+                                    state.items.isNotEmpty() -> firstFileFocusRequester
+                                    else -> FocusRequester.Default
+                                }
+                            },
+                        leadingContent = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_storage),
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp),
+                                tint = if (isInternalActive) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        },
+                        headlineContent = {
+                            Text(
+                                text = internalRoot.label,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent,
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+
                 val isRunningAppsActive = state.activeSection == ToolboxSection.RUNNING_APPS
                 ListItem(
                     selected = isRunningAppsActive,
                     onClick = onSelectRunningApps,
+                    modifier = Modifier
+                        .focusRequester(runningAppsSidebarFocusRequester)
+                        .focusProperties { canFocus = !state.isFocusInContent },
                     leadingContent = {
                         Icon(
                             painter = painterResource(R.drawable.ic_apps),
@@ -200,6 +401,9 @@ fun FileManagerScreen(
                 ListItem(
                     selected = isFtpServerActive,
                     onClick = onSelectFtpServer,
+                    modifier = Modifier
+                        .focusRequester(ftpServerSidebarFocusRequester)
+                        .focusProperties { canFocus = !state.isFocusInContent },
                     leadingContent = {
                         Icon(
                             painter = painterResource(R.drawable.ic_ftp),
@@ -225,52 +429,77 @@ fun FileManagerScreen(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
-                Text(
-                    text = stringResource(R.string.sidebar_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                if (otherRoots.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = stringResource(R.string.sidebar_title),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(
-                        items = state.storageRoots,
-                        key = { it.directory.absolutePath }
-                    ) { root ->
-                        val isActive = state.activeSection == ToolboxSection.FILE_MANAGER &&
-                            root.directory.absolutePath == state.activeRootPath
-                        ListItem(
-                            selected = isActive,
-                            onClick = { onSelectRoot(root) },
-                            leadingContent = {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_storage),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(22.dp),
-                                    tint = if (isActive) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        itemsIndexed(
+                            items = otherRoots,
+                            key = { _, root -> root.directory.absolutePath }
+                        ) { _, root ->
+                            val rootPath = root.directory.absolutePath
+                            val isActive = state.activeSection == ToolboxSection.FILE_MANAGER &&
+                                rootPath == state.activeRootPath
+                            val rootFocusRequester = remember(rootPath) {
+                                sidebarRootFocusRequesters.getOrPut(rootPath) { FocusRequester() }
+                            }
+                            DisposableEffect(rootPath) {
+                                onDispose {
+                                    sidebarRootFocusRequesters.remove(rootPath)
+                                }
+                            }
+                            ListItem(
+                                selected = isActive,
+                                onClick = { onSelectRoot(root) },
+                                modifier = Modifier
+                                    .focusRequester(rootFocusRequester)
+                                    .focusProperties {
+                                        canFocus = !state.isFocusInContent
+                                        right = when {
+                                            state.activeSection != ToolboxSection.FILE_MANAGER ->
+                                                FocusRequester.Default
+                                            state.items.isNotEmpty() -> firstFileFocusRequester
+                                            state.canNavigateUp -> parentRowFocusRequester
+                                            else -> FocusRequester.Default
+                                        }
+                                    },
+                                leadingContent = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_storage),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(22.dp),
+                                        tint = if (isActive) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                },
+                                headlineContent = {
+                                    Text(
+                                        text = root.label,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.Transparent,
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
                                 )
-                            },
-                            headlineContent = {
-                                Text(
-                                    text = root.label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
-                            colors = ListItemDefaults.colors(
-                                containerColor = Color.Transparent,
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
                             )
-                        )
+                        }
                     }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
 
                 val footerSummary = when (state.activeSection) {
@@ -292,53 +521,68 @@ fun FileManagerScreen(
 
         Spacer(modifier = Modifier.width(20.dp))
 
-        if (state.activeSection == ToolboxSection.RUNNING_APPS) {
-            RunningAppsPane(
-                state = runningAppsState,
-                modifier = Modifier.weight(1f),
-                onToggleActiveOnly = onToggleActiveOnly,
-                onRefresh = onRefreshApps,
-                onAppClick = onAppClick,
-                onAppLongClick = onAppLongClick,
-                onDismissDetails = onDismissAppDetails,
-                onOpenAppInfo = onOpenAppInfo
-            )
-            return@Row
-        }
-
-        if (state.activeSection == ToolboxSection.FTP_SERVER) {
-            FtpServerPane(
-                state = ftpServerState,
-                hasStoragePermission = state.hasStoragePermission,
-                modifier = Modifier.weight(1f),
-                onToggleServer = onToggleFtpServer,
-                onGrantPermission = onGrantPermission
-            )
-            return@Row
-        }
-
-        // Right Main Pane: File Browser
-        Column(
+        Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-        ) {
-            // Top Action Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onNavigateUp,
-                    enabled = state.canNavigateUp
-                ) {
-                    Text(text = stringResource(R.string.up_button))
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown &&
+                        (event.key == Key.Back || event.key == Key.Escape) &&
+                        state.activeSection == ToolboxSection.FILE_MANAGER &&
+                        state.canNavigateUp &&
+                        !state.selectionMode &&
+                        state.detailItem == null &&
+                        state.deleteConfirmItems == null &&
+                        !state.showSortDialog
+                    ) {
+                        isTransitioningFolder = true
+                        runCatching { transitionFocusHoldRequester.requestFocus() }
+                    }
+                    false
                 }
+                .onFocusChanged { onContentFocusChanged(it.hasFocus) }
+        ) {
+            if (state.activeSection == ToolboxSection.RUNNING_APPS) {
+                RunningAppsPane(
+                    state = runningAppsState,
+                    modifier = Modifier.fillMaxSize(),
+                    initialFocusRequester = runningAppsContentFocusRequester,
+                    onToggleActiveOnly = onToggleActiveOnly,
+                    onRefresh = onRefreshApps,
+                    onAppClick = onAppClick,
+                    onAppLongClick = onAppLongClick,
+                    onDismissDetails = onDismissAppDetails,
+                    onOpenAppInfo = onOpenAppInfo
+                )
+            } else if (state.activeSection == ToolboxSection.FTP_SERVER) {
+                FtpServerPane(
+                    state = ftpServerState,
+                    hasStoragePermission = state.hasStoragePermission,
+                    modifier = Modifier.fillMaxSize(),
+                    initialFocusRequester = ftpServerContentFocusRequester,
+                    onToggleServer = onToggleFtpServer,
+                    onGrantPermission = onGrantPermission
+                )
+            } else {
+                // Right Main Pane: File Browser
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // Top Action Bar
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Spacer(modifier = Modifier.weight(1f))
 
-                Spacer(modifier = Modifier.weight(1f))
-
-                OutlinedButton(onClick = onToggleSelectionMode) {
+                        val actionBarCanFocus = !state.isLoading && !isTransitioningFolder
+                        OutlinedButton(
+                            onClick = onToggleSelectionMode,
+                            modifier = Modifier
+                                .focusRequester(fileFallbackFocusRequester)
+                                .focusProperties { canFocus = actionBarCanFocus }
+                        ) {
                     Text(
                         text = stringResource(
                             if (state.selectionMode) R.string.cancel_select else R.string.select_mode
@@ -374,12 +618,22 @@ fun FileManagerScreen(
                     }
                 }
 
-                OutlinedButton(onClick = onOpenSortDialog) {
+                OutlinedButton(
+                    onClick = onOpenSortDialog,
+                    modifier = Modifier.focusProperties { canFocus = actionBarCanFocus }
+                ) {
                     Text(text = stringResource(R.string.sort_button, sortOrderLabel(state.sortOrder)))
                 }
 
-                OutlinedButton(onClick = onRefresh) {
-                    Text(text = stringResource(R.string.refresh_button))
+                OutlinedButton(
+                    onClick = onRefresh,
+                    modifier = Modifier.focusProperties { canFocus = actionBarCanFocus }
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_refresh),
+                        contentDescription = stringResource(R.string.refresh_button),
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
 
@@ -441,11 +695,14 @@ fun FileManagerScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .focusRequester(transitionFocusHoldRequester)
+                    .focusProperties { canFocus = state.isLoading || isTransitioningFolder }
+                    .focusable()
             ) {
                 when {
-                    state.isLoading -> {
+                    state.isLoading && state.items.isEmpty() && !state.canNavigateUp -> {
                         Text(
-                            text = "Loading...",
+                            text = stringResource(R.string.loading_text),
                             modifier = Modifier.align(Alignment.Center),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -459,7 +716,7 @@ fun FileManagerScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    state.items.isEmpty() -> {
+                    state.items.isEmpty() && !state.canNavigateUp -> {
                         Text(
                             text = stringResource(R.string.empty_folder),
                             modifier = Modifier.align(Alignment.Center),
@@ -468,15 +725,33 @@ fun FileManagerScreen(
                         )
                     }
                     else -> {
+                        val parentPath = formatParentPath(
+                            currentPath = state.currentPath,
+                            activeRootPath = state.activeRootPath
+                        )
                         LazyColumn(
+                            state = fileListState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 16.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            items(
+                            if (state.canNavigateUp) {
+                                item(key = "__parent_folder__") {
+                                    ParentFolderRow(
+                                        parentPath = parentPath,
+                                        modifier = Modifier.focusRequester(parentRowFocusRequester),
+                                        onClick = {
+                                            isTransitioningFolder = true
+                                            runCatching { transitionFocusHoldRequester.requestFocus() }
+                                            onNavigateUp()
+                                        }
+                                    )
+                                }
+                            }
+                            itemsIndexed(
                                 items = state.items,
-                                key = { it.path }
-                            ) { item ->
+                                key = { _, item -> item.path }
+                            ) { index, item ->
                                 val isSelected = state.selectedPaths.contains(item.path)
                                 val focusRequester = remember(item.path) {
                                     itemFocusRequesters.getOrPut(item.path) { FocusRequester() }
@@ -486,24 +761,52 @@ fun FileManagerScreen(
                                         itemFocusRequesters.remove(item.path)
                                     }
                                 }
+                                val rowModifier = Modifier
+                                    .focusRequester(focusRequester)
+                                    .let {
+                                        if (index == 0) it.focusRequester(firstFileFocusRequester) else it
+                                    }
                                 FileRow(
                                     item = item,
                                     selectionMode = state.selectionMode,
                                     isSelected = isSelected,
-                                    modifier = Modifier.focusRequester(focusRequester),
+                                    modifier = rowModifier,
                                     onClick = {
-                                        if (!item.isDirectory && !state.selectionMode) {
-                                            pendingRestoreFocusPath = item.path
+                                        if (!state.selectionMode) {
+                                            if (item.isDirectory) {
+                                                isTransitioningFolder = true
+                                                runCatching { transitionFocusHoldRequester.requestFocus() }
+                                            } else {
+                                                pendingRestoreFocusPath = item.path
+                                            }
                                         }
                                         onItemClick(item)
                                     },
                                     onLongClick = { onItemLongClick(item) }
                                 )
                             }
+                            if (state.items.isEmpty()) {
+                                item(key = "__empty_folder__") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 32.dp)
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.empty_folder),
+                                            modifier = Modifier.align(Alignment.Center),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+        }
         }
     }
 
@@ -533,6 +836,14 @@ fun FileManagerScreen(
         )
     }
 
+    // Quit Confirm Dialog
+    if (state.showQuitDialog) {
+        QuitConfirmDialog(
+            onConfirm = onConfirmQuit,
+            onDismiss = onDismissQuitDialog
+        )
+    }
+
     // In-App Image Viewer
     state.viewingImageItem?.let { item ->
         ImageViewerOverlay(
@@ -548,6 +859,51 @@ fun FileManagerScreen(
             onClose = onDismissVideoViewer
         )
     }
+}
+
+private fun formatParentPath(currentPath: String, activeRootPath: String?): String {
+    val rawParentPath = File(currentPath).parent ?: return ".."
+    if (activeRootPath.isNullOrEmpty()) return rawParentPath
+    val normalizedRoot = activeRootPath.trimEnd('/')
+    return when {
+        rawParentPath == normalizedRoot -> "/"
+        rawParentPath.startsWith("$normalizedRoot/") -> rawParentPath.removePrefix(normalizedRoot)
+        else -> rawParentPath
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ParentFolderRow(
+    parentPath: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    ListItem(
+        selected = false,
+        onClick = onClick,
+        modifier = modifier,
+        leadingContent = {
+            Icon(
+                painter = painterResource(R.drawable.ic_folder_up),
+                contentDescription = stringResource(R.string.up_button),
+                modifier = Modifier.size(30.dp),
+                tint = Color(0xFFFBBF24)
+            )
+        },
+        headlineContent = {
+            Text(
+                text = parentPath,
+                maxLines = 1,
+                overflow = TextOverflow.StartEllipsis,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    )
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -777,6 +1133,61 @@ private fun DeleteConfirmDialog(
                         )
                     ) {
                         Text(text = stringResource(R.string.delete_action))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun QuitConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            colors = SurfaceDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(420.dp)
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.quit_confirm_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(R.string.quit_confirm_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)
+                ) {
+                    OutlinedButton(onClick = onDismiss) {
+                        Text(text = stringResource(R.string.cancel_action))
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        colors = ButtonDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                            focusedContainerColor = Color(0xFFDC2626),
+                            focusedContentColor = Color.White
+                        )
+                    ) {
+                        Text(text = stringResource(R.string.quit_action))
                     }
                 }
             }

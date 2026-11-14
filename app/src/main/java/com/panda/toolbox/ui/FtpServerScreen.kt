@@ -24,6 +24,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -58,6 +60,7 @@ fun FtpServerPane(
     state: FtpServerUiState,
     hasStoragePermission: Boolean,
     modifier: Modifier = Modifier,
+    initialFocusRequester: FocusRequester? = null,
     onToggleServer: () -> Unit,
     onGrantPermission: () -> Unit
 ) {
@@ -84,6 +87,11 @@ fun FtpServerPane(
 
             Button(
                 onClick = onToggleServer,
+                modifier = if (initialFocusRequester != null) {
+                    Modifier.focusRequester(initialFocusRequester)
+                } else {
+                    Modifier
+                },
                 colors = if (state.isRunning) {
                     ButtonDefaults.colors(
                         containerColor = MaterialTheme.colorScheme.error,

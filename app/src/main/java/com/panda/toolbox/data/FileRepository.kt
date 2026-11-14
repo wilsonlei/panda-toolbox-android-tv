@@ -41,9 +41,6 @@ class FileRepository(private val context: Context) {
         addIfValid(context.getString(R.string.storage_internal), primary)
 
         if (primary != null) {
-            addIfValid(context.getString(R.string.storage_downloads), File(primary, "Download"))
-            addIfValid(context.getString(R.string.storage_movies), File(primary, "Movies"))
-            addIfValid(context.getString(R.string.storage_pictures), File(primary, "Pictures"))
             addIfValid(context.getString(R.string.storage_documents), File(primary, "Documents"))
         }
 

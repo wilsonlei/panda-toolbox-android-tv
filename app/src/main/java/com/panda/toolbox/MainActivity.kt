@@ -11,6 +11,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -53,6 +54,7 @@ class MainActivity : ComponentActivity() {
     private var currentDirectory: File? = null
     private var lastKnownPermissionState: Boolean? = null
     private var pendingApkInstall: FileItem? = null
+    private var longPressBackHandled = false
 
     private val legacyPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -88,19 +90,36 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                if (uiState.showQuitDialog) {
+                    uiState = uiState.copy(showQuitDialog = false)
+                    return
+                }
                 if (uiState.activeSection == ToolboxSection.RUNNING_APPS) {
                     when {
                         runningAppsState.detailApp != null -> {
                             runningAppsState = runningAppsState.copy(detailApp = null)
                         }
+                        uiState.isFocusInContent -> {
+                            uiState = uiState.copy(
+                                isFocusInContent = false,
+                                focusSidebarTick = uiState.focusSidebarTick + 1
+                            )
+                        }
                         else -> {
-                            uiState = uiState.copy(activeSection = ToolboxSection.FILE_MANAGER)
+                            uiState = uiState.copy(showQuitDialog = true)
                         }
                     }
                     return
                 }
                 if (uiState.activeSection == ToolboxSection.FTP_SERVER) {
-                    uiState = uiState.copy(activeSection = ToolboxSection.FILE_MANAGER)
+                    if (uiState.isFocusInContent) {
+                        uiState = uiState.copy(
+                            isFocusInContent = false,
+                            focusSidebarTick = uiState.focusSidebarTick + 1
+                        )
+                    } else {
+                        uiState = uiState.copy(showQuitDialog = true)
+                    }
                     return
                 }
 
@@ -120,11 +139,16 @@ class MainActivity : ComponentActivity() {
                     uiState.detailItem != null -> {
                         uiState = uiState.copy(detailItem = null)
                     }
+                    !uiState.isFocusInContent -> {
+                        uiState = uiState.copy(showQuitDialog = true)
+                    }
                     uiState.selectionMode -> exitSelectionMode()
                     canNavigateUp() -> navigateUp()
                     else -> {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
+                        uiState = uiState.copy(
+                            isFocusInContent = false,
+                            focusSidebarTick = uiState.focusSidebarTick + 1
+                        )
                     }
                 }
             }
@@ -141,17 +165,26 @@ class MainActivity : ComponentActivity() {
                     ftpServerState = ftpServerState,
                     onSelectRunningApps = {
                         exitSelectionMode()
-                        uiState = uiState.copy(activeSection = ToolboxSection.RUNNING_APPS)
+                        uiState = uiState.copy(
+                            activeSection = ToolboxSection.RUNNING_APPS,
+                            focusContentTick = uiState.focusContentTick + 1
+                        )
                         loadRunningApps()
                     },
                     onSelectFtpServer = {
                         exitSelectionMode()
-                        uiState = uiState.copy(activeSection = ToolboxSection.FTP_SERVER)
+                        uiState = uiState.copy(
+                            activeSection = ToolboxSection.FTP_SERVER,
+                            focusContentTick = uiState.focusContentTick + 1
+                        )
                     },
                     onToggleFtpServer = { toggleFtpServer() },
                     onSelectRoot = { root ->
                         exitSelectionMode()
-                        uiState = uiState.copy(activeSection = ToolboxSection.FILE_MANAGER)
+                        uiState = uiState.copy(
+                            activeSection = ToolboxSection.FILE_MANAGER,
+                            focusContentTick = uiState.focusContentTick + 1
+                        )
                         currentRoot = root
                         navigateTo(root.directory)
                     },
@@ -184,6 +217,8 @@ class MainActivity : ComponentActivity() {
                     onDismissDetails = { uiState = uiState.copy(detailItem = null) },
                     onConfirmDelete = { items -> executeDelete(items) },
                     onDismissDeleteConfirm = { uiState = uiState.copy(deleteConfirmItems = null) },
+                    onConfirmQuit = { quitApp() },
+                    onDismissQuitDialog = { uiState = uiState.copy(showQuitDialog = false) },
                     onDismissImageViewer = { uiState = uiState.copy(viewingImageItem = null) },
                     onDismissVideoViewer = { uiState = uiState.copy(viewingVideoItem = null) },
                     onToggleActiveOnly = {
@@ -199,6 +234,11 @@ class MainActivity : ComponentActivity() {
                     onOpenAppInfo = { app ->
                         runningAppsState = runningAppsState.copy(detailApp = null)
                         openAppInfoSettings(app.packageName)
+                    },
+                    onContentFocusChanged = { hasFocus ->
+                        if (uiState.isFocusInContent != hasFocus) {
+                            uiState = uiState.copy(isFocusInContent = hasFocus)
+                        }
                     }
                 )
             }
@@ -225,6 +265,66 @@ class MainActivity : ComponentActivity() {
                 launchApkInstaller(pendingApk)
             }
         }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK &&
+            uiState.viewingImageItem == null &&
+            uiState.viewingVideoItem == null
+        ) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0) {
+                        longPressBackHandled = false
+                    } else if (!longPressBackHandled && (event.isLongPress || event.repeatCount >= 1)) {
+                        longPressBackHandled = true
+                        if (!uiState.showQuitDialog) {
+                            focusMainMenu()
+                        }
+                        return true
+                    }
+                    if (longPressBackHandled) return true
+                }
+                KeyEvent.ACTION_UP -> {
+                    if (longPressBackHandled) {
+                        longPressBackHandled = false
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_MENU &&
+            uiState.viewingImageItem == null &&
+            uiState.viewingVideoItem == null
+        ) {
+            focusMainMenu()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    private fun focusMainMenu() {
+        uiState = uiState.copy(
+            detailItem = null,
+            deleteConfirmItems = null,
+            showSortDialog = false,
+            showQuitDialog = false,
+            isFocusInContent = false,
+            focusSidebarTick = uiState.focusSidebarTick + 1
+        )
+        runningAppsState = runningAppsState.copy(detailApp = null)
+    }
+
+    private fun quitApp() {
+        ftpServer.stop()
+        ioExecutor.shutdownNow()
+        finishAndRemoveTask()
+        android.os.Process.killProcess(android.os.Process.myPid())
+        kotlin.system.exitProcess(0)
     }
 
     override fun onDestroy() {

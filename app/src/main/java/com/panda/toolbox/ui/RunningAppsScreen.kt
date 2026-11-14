@@ -22,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -56,6 +58,7 @@ data class RunningAppsUiState(
 fun RunningAppsPane(
     state: RunningAppsUiState,
     modifier: Modifier = Modifier,
+    initialFocusRequester: FocusRequester? = null,
     onToggleActiveOnly: () -> Unit,
     onRefresh: () -> Unit,
     onAppClick: (RunningAppItem) -> Unit,
@@ -84,7 +87,14 @@ fun RunningAppsPane(
                 overflow = TextOverflow.Ellipsis
             )
 
-            OutlinedButton(onClick = onToggleActiveOnly) {
+            OutlinedButton(
+                onClick = onToggleActiveOnly,
+                modifier = if (initialFocusRequester != null) {
+                    Modifier.focusRequester(initialFocusRequester)
+                } else {
+                    Modifier
+                }
+            ) {
                 Text(
                     text = stringResource(
                         if (state.activeOnly) R.string.active_only_on else R.string.active_only_off
@@ -93,7 +103,11 @@ fun RunningAppsPane(
             }
 
             OutlinedButton(onClick = onRefresh) {
-                Text(text = stringResource(R.string.refresh_button))
+                Icon(
+                    painter = painterResource(R.drawable.ic_refresh),
+                    contentDescription = stringResource(R.string.refresh_button),
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
 
