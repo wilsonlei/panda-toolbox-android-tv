@@ -188,6 +188,8 @@ class MainActivity : ComponentActivity() {
                         currentRoot = root
                         navigateTo(root.directory)
                     },
+                    onFocusRoot = { root -> refreshStorageSummary(root.directory) },
+                    onFocusRunningApps = { refreshMemorySummary() },
                     onNavigateUp = { navigateUp() },
                     onToggleSelectionMode = {
                         if (uiState.selectionMode) exitSelectionMode() else enterSelectionMode()
@@ -581,6 +583,26 @@ class MainActivity : ComponentActivity() {
             startActivity(intent)
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, getString(R.string.app_info_action), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun refreshStorageSummary(directory: File) {
+        ioExecutor.execute {
+            val summary = repository.getStorageSpaceSummary(directory) ?: ""
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                uiState = uiState.copy(storageSpaceSummary = summary)
+            }
+        }
+    }
+
+    private fun refreshMemorySummary() {
+        ioExecutor.execute {
+            val memSummary = runningAppsRepository.getMemorySummary()
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                runningAppsState = runningAppsState.copy(memorySummary = memSummary)
+            }
         }
     }
 

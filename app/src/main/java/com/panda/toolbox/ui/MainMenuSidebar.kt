@@ -14,11 +14,15 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -56,8 +60,11 @@ internal fun MainMenuSidebar(
     firstFileFocusRequester: FocusRequester,
     onSelectRoot: (StorageRoot) -> Unit,
     onSelectRunningApps: () -> Unit,
-    onSelectFtpServer: () -> Unit
+    onSelectFtpServer: () -> Unit,
+    onFocusRoot: (StorageRoot) -> Unit,
+    onFocusRunningApps: () -> Unit
 ) {
+    var focusedSection by remember { mutableStateOf<ToolboxSection?>(null) }
     Surface(
         modifier = Modifier
             .width(230.dp)
@@ -131,6 +138,12 @@ internal fun MainMenuSidebar(
                     modifier = Modifier
                         .focusRequester(internalFocusRequester)
                         .focusRequester(initialSidebarFocusRequester)
+                        .onFocusChanged { focusState ->
+                            if (focusState.isFocused) {
+                                focusedSection = ToolboxSection.FILE_MANAGER
+                                onFocusRoot(internalRoot)
+                            }
+                        }
                         .focusProperties {
                             canFocus = !state.isFocusInContent
                             right = when {
@@ -174,6 +187,12 @@ internal fun MainMenuSidebar(
                 onClick = onSelectRunningApps,
                 modifier = Modifier
                     .focusRequester(runningAppsSidebarFocusRequester)
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused) {
+                            focusedSection = ToolboxSection.RUNNING_APPS
+                            onFocusRunningApps()
+                        }
+                    }
                     .focusProperties { canFocus = !state.isFocusInContent },
                 leadingContent = {
                     Icon(
@@ -207,6 +226,11 @@ internal fun MainMenuSidebar(
                 onClick = onSelectFtpServer,
                 modifier = Modifier
                     .focusRequester(ftpServerSidebarFocusRequester)
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused) {
+                            focusedSection = ToolboxSection.FTP_SERVER
+                        }
+                    }
                     .focusProperties { canFocus = !state.isFocusInContent },
                 leadingContent = {
                     Icon(
@@ -266,6 +290,12 @@ internal fun MainMenuSidebar(
                             onClick = { onSelectRoot(root) },
                             modifier = Modifier
                                 .focusRequester(rootFocusRequester)
+                                .onFocusChanged { focusState ->
+                                    if (focusState.isFocused) {
+                                        focusedSection = ToolboxSection.FILE_MANAGER
+                                        onFocusRoot(root)
+                                    }
+                                }
                                 .focusProperties {
                                     canFocus = !state.isFocusInContent
                                     right = when {
@@ -306,7 +336,12 @@ internal fun MainMenuSidebar(
                 Spacer(modifier = Modifier.weight(1f))
             }
 
-            val footerSummary = when (state.activeSection) {
+            val displaySection = if (!state.isFocusInContent && focusedSection != null) {
+                focusedSection!!
+            } else {
+                state.activeSection
+            }
+            val footerSummary = when (displaySection) {
                 ToolboxSection.RUNNING_APPS -> runningAppsState.memorySummary
                 ToolboxSection.FTP_SERVER -> ftpServerState.serverUrl
                     ?: stringResource(R.string.ftp_status_stopped)

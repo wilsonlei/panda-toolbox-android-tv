@@ -60,6 +60,8 @@ fun ToolboxScreen(
     onSelectFtpServer: () -> Unit,
     onToggleFtpServer: () -> Unit,
     onSelectRoot: (StorageRoot) -> Unit,
+    onFocusRoot: (StorageRoot) -> Unit,
+    onFocusRunningApps: () -> Unit,
     onNavigateUp: () -> Unit,
     onToggleSelectionMode: () -> Unit,
     onToggleSelectAll: () -> Unit,
@@ -149,7 +151,9 @@ fun ToolboxScreen(
             firstFileFocusRequester = firstFileFocusRequester,
             onSelectRoot = onSelectRoot,
             onSelectRunningApps = onSelectRunningApps,
-            onSelectFtpServer = onSelectFtpServer
+            onSelectFtpServer = onSelectFtpServer,
+            onFocusRoot = onFocusRoot,
+            onFocusRunningApps = onFocusRunningApps
         )
 
         Spacer(modifier = Modifier.width(20.dp))
