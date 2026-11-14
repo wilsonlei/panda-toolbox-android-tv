@@ -80,6 +80,7 @@ fun ToolboxScreen(
     onDismissQuitDialog: () -> Unit,
     onDismissImageViewer: () -> Unit,
     onDismissVideoViewer: () -> Unit,
+    onDismissAudioViewer: () -> Unit,
     onToggleActiveOnly: () -> Unit,
     onRefreshApps: () -> Unit,
     onAppClick: (RunningAppItem) -> Unit,
@@ -208,7 +209,8 @@ fun ToolboxScreen(
                         onConfirmDelete = onConfirmDelete,
                         onDismissDeleteConfirm = onDismissDeleteConfirm,
                         onDismissImageViewer = onDismissImageViewer,
-                        onDismissVideoViewer = onDismissVideoViewer
+                        onDismissVideoViewer = onDismissVideoViewer,
+                        onDismissAudioViewer = onDismissAudioViewer
                     )
                 }
             }

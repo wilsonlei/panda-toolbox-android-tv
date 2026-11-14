@@ -40,6 +40,7 @@ data class FileManagerUiState(
     val deleteConfirmItems: List<FileItem>? = null,
     val viewingImageItem: FileItem? = null,
     val viewingVideoItem: FileItem? = null,
+    val viewingAudioItem: FileItem? = null,
     val showSortDialog: Boolean = false,
     val showQuitDialog: Boolean = false,
     val isFocusInContent: Boolean = false,
@@ -67,7 +68,8 @@ fun FileManagerPane(
     onConfirmDelete: (List<FileItem>) -> Unit,
     onDismissDeleteConfirm: () -> Unit,
     onDismissImageViewer: () -> Unit,
-    onDismissVideoViewer: () -> Unit
+    onDismissVideoViewer: () -> Unit,
+    onDismissAudioViewer: () -> Unit
 ) {
     val itemFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val fileListState = rememberLazyListState()
@@ -126,9 +128,15 @@ fun FileManagerPane(
         isTransitioningFolder = false
     }
 
-    LaunchedEffect(state.viewingImageItem, state.viewingVideoItem, state.detailItem) {
+    LaunchedEffect(
+        state.viewingImageItem,
+        state.viewingVideoItem,
+        state.viewingAudioItem,
+        state.detailItem
+    ) {
         if (state.viewingImageItem == null &&
             state.viewingVideoItem == null &&
+            state.viewingAudioItem == null &&
             state.detailItem == null
         ) {
             val targetPath = pendingRestoreFocusPath
@@ -222,6 +230,14 @@ fun FileManagerPane(
         VideoViewerOverlay(
             item = item,
             onClose = onDismissVideoViewer
+        )
+    }
+
+    // In-App Audio Player
+    state.viewingAudioItem?.let { item ->
+        AudioViewerOverlay(
+            item = item,
+            onClose = onDismissAudioViewer
         )
     }
 }

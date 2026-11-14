@@ -58,6 +58,7 @@
     <string name="forward_10s">+10s</string>
     <string name="image_load_error">Unable to display this image</string>
     <string name="video_load_error">Unable to play this video</string>
+    <string name="audio_load_error">Unable to play this audio file</string>
     <string name="apk_install_failed">Unable to start APK installation</string>
     <string name="allow_unknown_apps_toast">Allow installing unknown apps for Panda Toolbox, then return to install</string>
     <string name="ftp_server_title">FTP Server</string>

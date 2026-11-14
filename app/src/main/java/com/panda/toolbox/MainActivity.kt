@@ -130,6 +130,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 when {
+                    uiState.viewingAudioItem != null -> {
+                        uiState = uiState.copy(viewingAudioItem = null)
+                    }
                     uiState.viewingVideoItem != null -> {
                         uiState = uiState.copy(viewingVideoItem = null)
                     }
@@ -229,6 +232,7 @@ class MainActivity : ComponentActivity() {
                     onDismissQuitDialog = { uiState = uiState.copy(showQuitDialog = false) },
                     onDismissImageViewer = { uiState = uiState.copy(viewingImageItem = null) },
                     onDismissVideoViewer = { uiState = uiState.copy(viewingVideoItem = null) },
+                    onDismissAudioViewer = { uiState = uiState.copy(viewingAudioItem = null) },
                     onToggleActiveOnly = {
                         runningAppsState = runningAppsState.copy(
                             activeOnly = !runningAppsState.activeOnly
@@ -278,7 +282,8 @@ class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BACK &&
             uiState.viewingImageItem == null &&
-            uiState.viewingVideoItem == null
+            uiState.viewingVideoItem == null &&
+            uiState.viewingAudioItem == null
         ) {
             when (event.action) {
                 KeyEvent.ACTION_DOWN -> {
@@ -307,7 +312,8 @@ class MainActivity : ComponentActivity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_MENU &&
             uiState.viewingImageItem == null &&
-            uiState.viewingVideoItem == null
+            uiState.viewingVideoItem == null &&
+            uiState.viewingAudioItem == null
         ) {
             focusMainMenu()
             return true
@@ -427,6 +433,7 @@ class MainActivity : ComponentActivity() {
             item.isDirectory -> navigateTo(item.file)
             item.type == FileType.IMAGE -> uiState = uiState.copy(viewingImageItem = item)
             item.type == FileType.VIDEO -> uiState = uiState.copy(viewingVideoItem = item)
+            item.type == FileType.AUDIO -> uiState = uiState.copy(viewingAudioItem = item)
             item.extension == "apk" -> installApk(item)
             else -> uiState = uiState.copy(detailItem = item)
         }
