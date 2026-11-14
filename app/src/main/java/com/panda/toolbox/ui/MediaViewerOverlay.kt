@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -42,6 +43,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +53,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Button
 import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
@@ -119,6 +122,10 @@ fun ImageViewerOverlay(
                 .focusable()
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown) {
+                        if (event.key == Key.Back || event.key == Key.Escape) {
+                            onClose()
+                            return@onPreviewKeyEvent true
+                        }
                         val isRestoreKey = event.key == Key.DirectionUp ||
                             event.key == Key.DirectionDown
                         if (!showOverlay && isRestoreKey) {
@@ -253,6 +260,26 @@ fun VideoViewerOverlay(
                 .focusable()
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown) {
+                        if (event.key == Key.Back || event.key == Key.Escape) {
+                            onClose()
+                            return@onPreviewKeyEvent true
+                        }
+                        val isEnter = event.key == Key.DirectionCenter ||
+                            event.key == Key.Enter ||
+                            event.key == Key.NumPadEnter
+                        if (!showOverlay && isEnter) {
+                            val view = videoViewRef
+                            if (view != null && isPrepared) {
+                                if (view.isPlaying) {
+                                    view.pause()
+                                    isPlaying = false
+                                } else {
+                                    view.start()
+                                    isPlaying = true
+                                }
+                            }
+                            return@onPreviewKeyEvent true
+                        }
                         val isRestoreKey = event.key == Key.DirectionUp ||
                             event.key == Key.DirectionDown
                         if (!showOverlay && isRestoreKey) {
@@ -270,6 +297,8 @@ fun VideoViewerOverlay(
         AndroidView(
             factory = { context ->
                 VideoView(context).apply {
+                    isFocusable = false
+                    isFocusableInTouchMode = false
                     videoViewRef = this
                     setOnPreparedListener { mp ->
                         isPrepared = true
@@ -415,10 +444,14 @@ fun VideoViewerOverlay(
                     enabled = isPrepared,
                     modifier = Modifier.focusRequester(playPauseFocusRequester)
                 ) {
-                    Text(
-                        text = stringResource(
+                    Icon(
+                        painter = painterResource(
+                            if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+                        ),
+                        contentDescription = stringResource(
                             if (isPlaying) R.string.pause_action else R.string.play_action
-                        )
+                        ),
+                        modifier = Modifier.size(22.dp)
                     )
                 }
 
