@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.panda.toolbox.data.FileRepository
 import com.panda.toolbox.data.RunningAppsRepository
+import com.panda.toolbox.data.ftp.LocalFtpServer
 import com.panda.toolbox.model.FileItem
 import com.panda.toolbox.model.FileType
 import com.panda.toolbox.model.RunningAppItem
@@ -30,6 +31,7 @@ import com.panda.toolbox.model.SortOrder
 import com.panda.toolbox.model.StorageRoot
 import com.panda.toolbox.ui.FileManagerScreen
 import com.panda.toolbox.ui.FileManagerUiState
+import com.panda.toolbox.ui.FtpServerUiState
 import com.panda.toolbox.ui.RunningAppsUiState
 import com.panda.toolbox.ui.ToolboxSection
 import com.panda.toolbox.ui.theme.PandaTvTheme
@@ -40,11 +42,13 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var repository: FileRepository
     private lateinit var runningAppsRepository: RunningAppsRepository
+    private lateinit var ftpServer: LocalFtpServer
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var uiState by mutableStateOf(FileManagerUiState())
     private var runningAppsState by mutableStateOf(RunningAppsUiState())
+    private var ftpServerState by mutableStateOf(FtpServerUiState())
     private var currentRoot: StorageRoot? = null
     private var currentDirectory: File? = null
     private var lastKnownPermissionState: Boolean? = null
@@ -61,6 +65,25 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         repository = FileRepository(this)
         runningAppsRepository = RunningAppsRepository(this)
+        ftpServer = LocalFtpServer(
+            onStateChanged = { isRunning, url, activeConnections ->
+                mainHandler.post {
+                    if (isFinishing || isDestroyed) return@post
+                    ftpServerState = ftpServerState.copy(
+                        isRunning = isRunning,
+                        serverUrl = url,
+                        activeConnections = activeConnections
+                    )
+                }
+            },
+            onLog = { message ->
+                mainHandler.post {
+                    if (isFinishing || isDestroyed) return@post
+                    val updatedLogs = (listOf(message) + ftpServerState.activityLogs).take(50)
+                    ftpServerState = ftpServerState.copy(activityLogs = updatedLogs)
+                }
+            }
+        )
         uiState = uiState.copy(sortOrder = loadSavedSortOrder())
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -74,6 +97,10 @@ class MainActivity : ComponentActivity() {
                             uiState = uiState.copy(activeSection = ToolboxSection.FILE_MANAGER)
                         }
                     }
+                    return
+                }
+                if (uiState.activeSection == ToolboxSection.FTP_SERVER) {
+                    uiState = uiState.copy(activeSection = ToolboxSection.FILE_MANAGER)
                     return
                 }
 
@@ -111,11 +138,17 @@ class MainActivity : ComponentActivity() {
                 FileManagerScreen(
                     state = uiState,
                     runningAppsState = runningAppsState,
+                    ftpServerState = ftpServerState,
                     onSelectRunningApps = {
                         exitSelectionMode()
                         uiState = uiState.copy(activeSection = ToolboxSection.RUNNING_APPS)
                         loadRunningApps()
                     },
+                    onSelectFtpServer = {
+                        exitSelectionMode()
+                        uiState = uiState.copy(activeSection = ToolboxSection.FTP_SERVER)
+                    },
+                    onToggleFtpServer = { toggleFtpServer() },
                     onSelectRoot = { root ->
                         exitSelectionMode()
                         uiState = uiState.copy(activeSection = ToolboxSection.FILE_MANAGER)
@@ -196,6 +229,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        ftpServer.stop()
         ioExecutor.shutdownNow()
     }
 
@@ -213,6 +247,14 @@ class MainActivity : ComponentActivity() {
             storageRoots = roots,
             activeRootPath = currentRoot?.directory?.absolutePath
         )
+
+        val internalStorage = Environment.getExternalStorageDirectory()
+        if (internalStorage != null) {
+            ftpServerState = ftpServerState.copy(
+                rootLabel = getString(R.string.storage_internal),
+                rootPath = internalStorage.absolutePath
+            )
+        }
 
         if (targetDir != null) {
             navigateTo(targetDir)
@@ -457,6 +499,34 @@ class MainActivity : ComponentActivity() {
                     memorySummary = memSummary
                 )
             }
+        }
+    }
+
+    private fun toggleFtpServer() {
+        if (ftpServer.isRunning) {
+            ftpServer.stop()
+            ftpServerState = ftpServerState.copy(errorMessage = null)
+            return
+        }
+
+        val rootPath = ftpServerState.rootPath.ifBlank {
+            Environment.getExternalStorageDirectory()?.absolutePath ?: ""
+        }
+        if (rootPath.isEmpty()) {
+            ftpServerState = ftpServerState.copy(errorMessage = getString(R.string.cannot_read_folder))
+            return
+        }
+
+        val result = ftpServer.start(File(rootPath), LocalFtpServer.DEFAULT_PORT)
+        result.onSuccess {
+            ftpServerState = ftpServerState.copy(errorMessage = null)
+        }.onFailure { error ->
+            val message = if (error.message == "NO_NETWORK") {
+                getString(R.string.ftp_no_network_error)
+            } else {
+                getString(R.string.ftp_start_failed, error.message ?: "unknown error")
+            }
+            ftpServerState = ftpServerState.copy(errorMessage = message)
         }
     }
 

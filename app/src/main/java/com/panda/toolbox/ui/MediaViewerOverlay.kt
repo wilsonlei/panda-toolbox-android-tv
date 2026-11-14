@@ -3,8 +3,12 @@ package com.panda.toolbox.ui
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.widget.VideoView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,12 +36,19 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Button
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
@@ -55,6 +66,7 @@ import kotlin.math.roundToInt
 
 private const val MAX_IMAGE_DIMENSION = 2048
 private const val SEEK_STEP_MS = 10_000
+private const val OVERLAY_AUTO_HIDE_MS = 3_000L
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -65,7 +77,9 @@ fun ImageViewerOverlay(
     var imageBitmap by remember(item.path) { mutableStateOf<ImageBitmap?>(null) }
     var isLoading by remember(item.path) { mutableStateOf(true) }
     var loadFailed by remember(item.path) { mutableStateOf(false) }
-    val closeFocusRequester = remember { FocusRequester() }
+    var showOverlay by remember(item.path) { mutableStateOf(true) }
+    var interactionTick by remember(item.path) { mutableIntStateOf(0) }
+    val rootFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(item.path) {
         isLoading = true
@@ -79,15 +93,46 @@ fun ImageViewerOverlay(
         isLoading = false
     }
 
-    LaunchedEffect(Unit) {
-        closeFocusRequester.requestFocus()
+    LaunchedEffect(showOverlay, interactionTick) {
+        if (showOverlay) {
+            delay(OVERLAY_AUTO_HIDE_MS)
+            showOverlay = false
+        }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
+    LaunchedEffect(Unit) {
+        runCatching { rootFocusRequester.requestFocus() }
+    }
+
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .focusRequester(rootFocusRequester)
+                .focusable()
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) {
+                        val isRestoreKey = event.key == Key.DirectionUp ||
+                            event.key == Key.DirectionDown
+                        if (!showOverlay && isRestoreKey) {
+                            showOverlay = true
+                            interactionTick++
+                            return@onPreviewKeyEvent true
+                        }
+                        if (showOverlay) {
+                            interactionTick++
+                        }
+                    }
+                    false
+                }
+        ) {
         when {
             isLoading -> {
                 Text(
@@ -115,31 +160,32 @@ fun ImageViewerOverlay(
             }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .background(Color.Black.copy(alpha = 0.65f))
-                .padding(horizontal = 32.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        AnimatedVisibility(
+            visible = showOverlay,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
         ) {
-            Text(
-                text = item.name,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.MiddleEllipsis
-            )
-            Button(
-                onClick = onClose,
-                modifier = Modifier.focusRequester(closeFocusRequester)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .padding(horizontal = 32.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(text = stringResource(R.string.close_action))
+                Text(
+                    text = item.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis
+                )
             }
         }
+    }
     }
 }
 
@@ -155,10 +201,24 @@ fun VideoViewerOverlay(
     var hasError by remember(item.path) { mutableStateOf(false) }
     var durationMs by remember(item.path) { mutableIntStateOf(0) }
     var positionMs by remember(item.path) { mutableIntStateOf(0) }
+    var showOverlay by remember(item.path) { mutableStateOf(true) }
+    var interactionTick by remember(item.path) { mutableIntStateOf(0) }
+    val rootFocusRequester = remember { FocusRequester() }
     val playPauseFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) {
-        playPauseFocusRequester.requestFocus()
+    LaunchedEffect(showOverlay, interactionTick) {
+        if (showOverlay) {
+            delay(OVERLAY_AUTO_HIDE_MS)
+            showOverlay = false
+        }
+    }
+
+    LaunchedEffect(showOverlay, isPrepared) {
+        if (showOverlay && isPrepared) {
+            runCatching { playPauseFocusRequester.requestFocus() }
+        } else {
+            runCatching { rootFocusRequester.requestFocus() }
+        }
     }
 
     LaunchedEffect(isPrepared, isPlaying, item.path) {
@@ -178,11 +238,35 @@ fun VideoViewerOverlay(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .focusRequester(rootFocusRequester)
+                .focusable()
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) {
+                        val isRestoreKey = event.key == Key.DirectionUp ||
+                            event.key == Key.DirectionDown
+                        if (!showOverlay && isRestoreKey) {
+                            showOverlay = true
+                            interactionTick++
+                            return@onPreviewKeyEvent true
+                        }
+                        if (showOverlay) {
+                            interactionTick++
+                        }
+                    }
+                    false
+                }
+        ) {
         AndroidView(
             factory = { context ->
                 VideoView(context).apply {
@@ -231,32 +315,43 @@ fun VideoViewerOverlay(
         }
 
         // Top Title Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .background(Color.Black.copy(alpha = 0.65f))
-                .padding(horizontal = 32.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        AnimatedVisibility(
+            visible = showOverlay,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
         ) {
-            Text(
-                text = item.name,
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.MiddleEllipsis
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .padding(horizontal = 32.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis
+                )
+            }
         }
 
         // Bottom Playback Controls
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .background(Color.Black.copy(alpha = 0.72f))
-                .padding(horizontal = 32.dp, vertical = 16.dp)
+        AnimatedVisibility(
+            visible = showOverlay,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .padding(horizontal = 32.dp, vertical = 16.dp)
+            ) {
             val progressFraction = if (durationMs > 0) {
                 (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
             } else {
@@ -340,12 +435,10 @@ fun VideoViewerOverlay(
                 ) {
                     Text(text = stringResource(R.string.forward_10s))
                 }
-
-                OutlinedButton(onClick = onClose) {
-                    Text(text = stringResource(R.string.close_action))
-                }
+            }
             }
         }
+    }
     }
 }
 

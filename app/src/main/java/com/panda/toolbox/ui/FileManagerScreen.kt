@@ -18,8 +18,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -50,7 +58,8 @@ import java.util.Locale
 
 enum class ToolboxSection {
     FILE_MANAGER,
-    RUNNING_APPS
+    RUNNING_APPS,
+    FTP_SERVER
 }
 
 data class FileManagerUiState(
@@ -79,7 +88,10 @@ data class FileManagerUiState(
 fun FileManagerScreen(
     state: FileManagerUiState,
     runningAppsState: RunningAppsUiState,
+    ftpServerState: FtpServerUiState,
     onSelectRunningApps: () -> Unit,
+    onSelectFtpServer: () -> Unit,
+    onToggleFtpServer: () -> Unit,
     onSelectRoot: (StorageRoot) -> Unit,
     onNavigateUp: () -> Unit,
     onToggleSelectionMode: () -> Unit,
@@ -104,6 +116,22 @@ fun FileManagerScreen(
     onDismissAppDetails: () -> Unit,
     onOpenAppInfo: (RunningAppItem) -> Unit
 ) {
+    val itemFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
+    var pendingRestoreFocusPath by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(state.viewingImageItem, state.viewingVideoItem, state.detailItem) {
+        if (state.viewingImageItem == null &&
+            state.viewingVideoItem == null &&
+            state.detailItem == null
+        ) {
+            val targetPath = pendingRestoreFocusPath
+            if (targetPath != null) {
+                pendingRestoreFocusPath = null
+                runCatching { itemFocusRequesters[targetPath]?.requestFocus() }
+            }
+        }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -167,6 +195,36 @@ fun FileManagerScreen(
                     )
                 )
 
+                Spacer(modifier = Modifier.height(6.dp))
+                val isFtpServerActive = state.activeSection == ToolboxSection.FTP_SERVER
+                ListItem(
+                    selected = isFtpServerActive,
+                    onClick = onSelectFtpServer,
+                    leadingContent = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_ftp),
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                            tint = if (isFtpServerActive) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            text = stringResource(R.string.ftp_server_title),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                )
+
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     text = stringResource(R.string.sidebar_title),
@@ -215,10 +273,11 @@ fun FileManagerScreen(
                     }
                 }
 
-                val footerSummary = if (isRunningAppsActive) {
-                    runningAppsState.memorySummary
-                } else {
-                    state.storageSpaceSummary
+                val footerSummary = when (state.activeSection) {
+                    ToolboxSection.RUNNING_APPS -> runningAppsState.memorySummary
+                    ToolboxSection.FTP_SERVER -> ftpServerState.serverUrl
+                        ?: stringResource(R.string.ftp_status_stopped)
+                    ToolboxSection.FILE_MANAGER -> state.storageSpaceSummary
                 }
                 if (footerSummary.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
@@ -243,6 +302,17 @@ fun FileManagerScreen(
                 onAppLongClick = onAppLongClick,
                 onDismissDetails = onDismissAppDetails,
                 onOpenAppInfo = onOpenAppInfo
+            )
+            return@Row
+        }
+
+        if (state.activeSection == ToolboxSection.FTP_SERVER) {
+            FtpServerPane(
+                state = ftpServerState,
+                hasStoragePermission = state.hasStoragePermission,
+                modifier = Modifier.weight(1f),
+                onToggleServer = onToggleFtpServer,
+                onGrantPermission = onGrantPermission
             )
             return@Row
         }
@@ -408,11 +478,25 @@ fun FileManagerScreen(
                                 key = { it.path }
                             ) { item ->
                                 val isSelected = state.selectedPaths.contains(item.path)
+                                val focusRequester = remember(item.path) {
+                                    itemFocusRequesters.getOrPut(item.path) { FocusRequester() }
+                                }
+                                DisposableEffect(item.path) {
+                                    onDispose {
+                                        itemFocusRequesters.remove(item.path)
+                                    }
+                                }
                                 FileRow(
                                     item = item,
                                     selectionMode = state.selectionMode,
                                     isSelected = isSelected,
-                                    onClick = { onItemClick(item) },
+                                    modifier = Modifier.focusRequester(focusRequester),
+                                    onClick = {
+                                        if (!item.isDirectory && !state.selectionMode) {
+                                            pendingRestoreFocusPath = item.path
+                                        }
+                                        onItemClick(item)
+                                    },
                                     onLongClick = { onItemLongClick(item) }
                                 )
                             }
@@ -472,6 +556,7 @@ private fun FileRow(
     item: FileItem,
     selectionMode: Boolean,
     isSelected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -514,6 +599,7 @@ private fun FileRow(
         selected = isSelected,
         onClick = onClick,
         onLongClick = onLongClick,
+        modifier = modifier,
         leadingContent = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

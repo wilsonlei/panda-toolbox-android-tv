@@ -60,4 +60,20 @@
     <string name="video_load_error">Unable to play this video</string>
     <string name="apk_install_failed">Unable to start APK installation</string>
     <string name="allow_unknown_apps_toast">Allow installing unknown apps for Panda Toolbox, then return to install</string>
+    <string name="ftp_server_title">FTP Server</string>
+    <string name="ftp_start_server">Start Server</string>
+    <string name="ftp_stop_server">Stop Server</string>
+    <string name="ftp_status_running">RUNNING</string>
+    <string name="ftp_status_stopped">STOPPED</string>
+    <string name="ftp_url_label">Server Address</string>
+    <string name="ftp_not_running_hint">Start the server to transfer files from your computer or phone over Wi-Fi / Ethernet.</string>
+    <string name="ftp_shared_folder_label">Shared Folder</string>
+    <string name="ftp_port_label">Port</string>
+    <string name="ftp_access_label">Access</string>
+    <string name="ftp_access_anonymous">Anonymous (No password required)</string>
+    <string name="ftp_connections_label">Active Connections</string>
+    <string name="ftp_activity_log_title">Activity Log</string>
+    <string name="ftp_activity_empty">No transfers yet</string>
+    <string name="ftp_no_network_error">No local network connection found. Connect to Wi-Fi or Ethernet first.</string>
+    <string name="ftp_start_failed">Failed to start FTP server: %s</string>
 </resources>
