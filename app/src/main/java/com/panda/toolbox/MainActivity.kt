@@ -30,6 +30,7 @@ import com.panda.toolbox.model.FileType
 import com.panda.toolbox.model.RunningAppItem
 import com.panda.toolbox.model.SortOrder
 import com.panda.toolbox.model.StorageRoot
+import com.panda.toolbox.ui.FtpLogEntry
 import com.panda.toolbox.ui.FtpServerUiState
 import com.panda.toolbox.ui.RunningAppsUiState
 import com.panda.toolbox.ui.ToolboxScreen
@@ -37,6 +38,9 @@ import com.panda.toolbox.ui.ToolboxSection
 import com.panda.toolbox.ui.filemanager.FileManagerUiState
 import com.panda.toolbox.ui.theme.PandaTvTheme
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
@@ -79,9 +83,11 @@ class MainActivity : ComponentActivity() {
                 }
             },
             onLog = { message ->
+                val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
                 mainHandler.post {
                     if (isFinishing || isDestroyed) return@post
-                    val updatedLogs = (listOf(message) + ftpServerState.activityLogs).take(50)
+                    val entry = FtpLogEntry(timestamp = timestamp, message = message)
+                    val updatedLogs = (listOf(entry) + ftpServerState.activityLogs).take(50)
                     ftpServerState = ftpServerState.copy(activityLogs = updatedLogs)
                 }
             }

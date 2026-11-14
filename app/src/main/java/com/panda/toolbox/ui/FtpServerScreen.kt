@@ -32,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -43,6 +44,11 @@ import androidx.tv.material3.Text
 import com.panda.toolbox.R
 import com.panda.toolbox.data.ftp.LocalFtpServer
 
+data class FtpLogEntry(
+    val timestamp: String,
+    val message: String
+)
+
 data class FtpServerUiState(
     val isRunning: Boolean = false,
     val serverUrl: String? = null,
@@ -50,7 +56,7 @@ data class FtpServerUiState(
     val rootLabel: String = "",
     val rootPath: String = "",
     val activeConnections: Int = 0,
-    val activityLogs: List<String> = emptyList(),
+    val activityLogs: List<FtpLogEntry> = emptyList(),
     val errorMessage: String? = null
 )
 
@@ -278,7 +284,7 @@ fun FtpServerPane(
                 ) {
                     items(state.activityLogs) { entry ->
                         var isFocused by remember { mutableStateOf(false) }
-                        Box(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(6.dp))
@@ -291,10 +297,22 @@ fun FtpServerPane(
                                 )
                                 .onFocusChanged { isFocused = it.isFocused }
                                 .focusable()
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = entry,
+                                text = entry.timestamp,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp,
+                                    letterSpacing = (-0.3).sp,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = entry.message,
+                                modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
