@@ -266,17 +266,7 @@ fun FileManagerScreen(
                     Text(text = stringResource(R.string.up_button))
                 }
 
-                Text(
-                    text = state.currentPath,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.StartEllipsis
-                )
+                Spacer(modifier = Modifier.weight(1f))
 
                 OutlinedButton(onClick = onToggleSelectionMode) {
                     Text(
@@ -322,6 +312,19 @@ fun FileManagerScreen(
                     Text(text = stringResource(R.string.refresh_button))
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Current Path
+            Text(
+                text = state.currentPath,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.StartEllipsis
+            )
 
             // Storage Permission Banner
             if (!state.hasStoragePermission) {
